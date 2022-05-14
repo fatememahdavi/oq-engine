@@ -556,6 +556,17 @@ if numba:
     ))(get_ry0)
 
 
+def get_distances_planar(planar, sites, dist_type):
+    """
+    :param planar: a planar array of shape (U, 3)
+    :param sites: a filtered site collection with N sites
+    :param dist_type: kind of distance to compute
+    :returns: an array of distances of shape (U, N)
+    """
+    getdist = globals()['get_' + dist_type]
+    return getdist(planar, sites.xyz)
+
+
 class PlanarSurface(BaseSurface):
     """
     Planar rectangular surface with two sides parallel to the Earth surface.

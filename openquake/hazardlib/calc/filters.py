@@ -26,6 +26,7 @@ from scipy.interpolate import interp1d
 
 from openquake.baselib.python3compat import raise_
 from openquake.hazardlib import site
+from openquake.hazardlib.geo.surface.planar import get_distances_planar
 from openquake.hazardlib.geo.surface.multi import (
     MultiSurface, _multi_distances, _multi_rx_ry0)
 from openquake.hazardlib.geo.utils import (
@@ -97,7 +98,7 @@ def get_distances(rupture, sites, param, dcache=None):
     """
     :param rupture: a rupture
     :param sites: a mesh of points or a site collection
-    :param param: the kind of distance to compute (default rjb)
+    :param param: the kind of distance to compute
     :param dcache: None or a dictionary (surfaceID, dist_type) -> distances
     :returns: an array of distances from the given sites
     """
@@ -105,7 +106,9 @@ def get_distances(rupture, sites, param, dcache=None):
             hasattr(rupture.surface.surfaces[0], 'suid')):
         return _distances_from_dcache(
             rupture, sites.complete, param, dcache)[sites.sids]
-    if not rupture.surface:  # PointRupture
+    if isinstance(rupture, numpy.ndarray):  # planar array
+        return get_distances_planar(rupture, sites, param)
+    elif not rupture.surface:  # PointRupture
         dist = rupture.hypocenter.distance_to_mesh(sites)
     elif param == 'rrup':
         dist = rupture.surface.get_min_distance(sites)
