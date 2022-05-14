@@ -648,8 +648,16 @@ class ContextMaker(object):
         :param sitecol: a filtered SiteCollection
         :returns: a list with 0 or 1 context array
         """
-        rups_sites = []
         fewsites = len(sitecol) <= self.max_sites_disagg
+        dd = self.defaultdict.copy()
+        dd['probs_occur'] = numpy.zeros(0)
+        if fewsites:
+            dd['clon'] = numpy.float64(0.)
+            dd['clat'] = numpy.float64(0.)
+        build_ctx = RecordBuilder(**dd).zeros
+        siteparams = [par for par in sitecol.array.dtype.names if par in dd]
+
+        rups_sites = []
         with self.ir_mon:
             allrups = numpy.array(
                 list(src.iter_ruptures(shift_hypo=self.shift_hypo)))
@@ -684,6 +692,9 @@ class ContextMaker(object):
             # loop over ruptures with the same magnitude
             if len(rups) == 0:  # may happen in case of min_mag/max_mag
                 continue
+            U, N = len(rups), len(sites)
+            mag = rups[0].mag
+            magdist = self.maximum_distance(mag)
             with self.dst_mon:
                 planar = numpy.array(
                     [rup.surface.array for rup in rups]
@@ -692,21 +703,18 @@ class ContextMaker(object):
                 if fewsites:
                     # get the closest points on the surface
                     closest = project_back(planar, xx, yy)  # (3, U, N)
-            magdist = self.maximum_distance(rups[0].mag)
-            U, N = len(rups), len(sites)
-            dd = self.defaultdict.copy()
-            if fewsites:
-                dd['clon'] = numpy.float64(0.)
-                dd['clat'] = numpy.float64(0.)
-            ctx = RecordBuilder(**dd).zeros((U, N))
+            ctx = build_ctx((U, N))
             ctx['src_id'] = src.id
+            ctx['mag'] = mag
             ctx['rrup'] = dists
+            for rec in ctx:
+                rec['occurrence_rate'] = planar[w].rate
             if fewsites:
                 ctx['clon'] = closest[0]
                 ctx['clat'] = closest[1]
             for par in self.REQUIRES_DISTANCES - {'rrup'}:
                 ctx[par] = get_distances(planar, sites, par)  # shape (U, N)
-            for par in sitecol.dtype.names:
+            for par in siteparams:
                 sitevalues = sites.array[par]
                 for rec in ctx:  # loop on U ruptures
                     rec[par] = sitevalues
