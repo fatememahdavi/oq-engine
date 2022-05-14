@@ -696,19 +696,24 @@ class ContextMaker(object):
                 if fewsites:
                     # get the closest points on the surface
                     closest = project_back(planar, xx, yy)  # (3, U, N)
-                umask = dists <= magdist[m]  # shape (U, N)
-            for u, rup in enumerate(rups):
-                mask = umask[u]
-                if mask.any():
-                    r_sites = sites.filter(mask)
-                    ctx = self.get_ctx(rup, r_sites, dists[u][mask])
-                    ctx.src_id = src.id
-                    ctxs.append(ctx)
-                    if fewsites:
-                        ctx.clon = closest[0, u, mask]
-                        ctx.clat = closest[1, u, mask]
-
-        return [] if not ctxs else [self.recarray(ctxs)]
+            dd = self.defaultdict
+            U, N = len(rups), len(sites)
+            ctx = RecordBuilder(**dd).zeros((U, N))
+            ctx['src_id'] = src.id
+            ctx['rrup'] = dists
+            if fewsites:
+                ctx['clon'] = closest[0]
+                ctx['clat'] = closest[1]
+            for par in self.REQUIRES_DISTANCES - {'rrup'}:
+                ctx[par] = get_distances(planar, sites, par)  # shape (U, N)
+            for par in sitecol.dtype.names:
+                sitevalues = sites.array[par]
+                for rec in ctx:  # loop on U ruptures
+                    rec[par] = sitevalues
+            reduced_ctx = ctx[ctx.rrup <= magdist[m]]
+            if len(reduced_ctx):
+                ctxs.append(reduced_ctx.flatten())
+        return ctxs  # one context array for each magnitude
 
     def get_ctxs(self, src, sitecol, src_id=0, step=1):
         """
