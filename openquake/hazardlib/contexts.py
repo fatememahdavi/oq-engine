@@ -693,8 +693,11 @@ class ContextMaker(object):
                     # get the closest points on the surface
                     closest = project_back(planar, xx, yy)  # (3, U, N)
             magdist = self.maximum_distance(rups[0].mag)
-            dd = self.defaultdict
             U, N = len(rups), len(sites)
+            dd = self.defaultdict.copy()
+            if fewsites:
+                dd['clon'] = numpy.float64(0.)
+                dd['clat'] = numpy.float64(0.)
             ctx = RecordBuilder(**dd).zeros((U, N))
             ctx['src_id'] = src.id
             ctx['rrup'] = dists
