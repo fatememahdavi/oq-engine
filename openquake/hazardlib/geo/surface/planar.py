@@ -47,20 +47,18 @@ planar_array_dt = numpy.dtype([
     ('normal', float),
     ('uv1', float),
     ('uv2', float),
-    ('wld', float),
+    ('wlr', float),
     ('sdr', float),
     ('hypo', float)])
 
 
 planin_dt = numpy.dtype([
-    ('usd', float),
-    ('lsd', float),
-    ('rar', float),
     ('mag', float),
     ('area', float),
     ('strike', float),
     ('dip', float),
     ('rake', float),
+    ('rate', float),
     ('lon', float),
     ('lat', float),
     ('dep', float),
@@ -141,66 +139,55 @@ def _update(corners, usd, lsd, mag, dims, strike, dip, rake, clon, clat, cdep):
 
 
 # numbified below, ultrafast
-def build_corners(usd, lsd, mag, dims, strike, dip, rake, lon, lat, deps):
-    (M, N), D = usd.shape, len(deps)
+def build_corners(usd, lsd, mag, dims, strike, dip, rake, lon, lat, dep):
+    M, N, D = mag.shape
     corners = numpy.zeros((6, M, N, D, 3))
     # 0,1,2,3: tl, tr, bl, br
     # 4: (strike, dip, rake)
     # 5: hypo
     for m in range(M):
         for n in range(N):
-            for d, dep in enumerate(deps):
-                _update(corners[:, m, n, d], usd[m, n], lsd[m, n], mag[m, n],
-                        dims[m, n], strike[m, n], dip[m, n], rake[m, n],
-                        lon, lat, dep)
+            for d in range(D):
+                _update(corners[:, m, n, d], usd, lsd,
+                        mag[m, n, d], dims[m, n, d], strike[m, n, d],
+                        dip[m, n, d], rake[m, n, d], lon, lat, dep[m, n, d])
     return corners
 
 
 if numba:
     F8 = numba.float64
     build_corners = compile(F8[:, :, :, :, :](
-        F8[:, :],     # usd
-        F8[:, :],     # lsd
-        F8[:, :],     # mag
-        F8[:, :, :],  # dims
-        F8[:, :],     # strike
-        F8[:, :],     # dip
-        F8[:, :],     # rake
-        F8,           # lon
-        F8,           # lat
-        F8[:],        # dep
+        F8,              # usd
+        F8,              # lsd
+        F8[:, :, :],     # mag
+        F8[:, :, :, :],  # dims
+        F8[:, :, :],     # strike
+        F8[:, :, :],     # dip
+        F8[:, :, :],     # rake
+        F8,              # lon
+        F8,              # lat
+        F8[:, :, :],     # dep
     ))(build_corners)
 
 
-def build_planar_surfaces(planin, lon, lat, deps, shift_hypo=False):
+# not numbified but fast anyway
+def build_planar(planin, lon, lat, usd, lsd):
     """
     :param planin:
-        Surface input parameters as an array of shape (M, N)
+        Surface input parameters as an array of shape (M, N, D)
     :param lon, lat
         Longitude and latitude of the hypocenters (scalars)
     :parameter deps:
         Depths of the hypocenters (vector)
-    :param shift_hypo:
-        If true, change .hc to the shifted hypocenter
     :return:
-        an array of PlanarSurfaces of shape (M, N, D)
+        an array of shape (M, N, D, 3)
     """
     corners = build_corners(
-        planin.usd, planin.lsd, planin.mag, planin.dims,
-        planin.strike, planin.dip, planin.rake, lon, lat, numpy.array(deps))
+        usd, lsd, planin.mag, planin.dims,
+        planin.strike, planin.dip, planin.rake, lon, lat, planin.dep)
     planar_array = build_planar_array(corners[:4], corners[4], corners[5])
-    out = numpy.zeros(planin.shape + (len(deps),), object)  # shape (M, N, D)
-    M, N, D = out.shape
-    for m in range(M):
-        for n in range(N):
-            for d in range(D):
-                surface = PlanarSurface.from_(planar_array[m, n, d])
-                if shift_hypo:
-                    surface.hc = Point(*corners[5, m, n, d])
-                else:
-                    surface.hc = Point(lon, lat, deps[d])
-                out[m, n, d] = surface
-    return out
+    planar_array.wlr[:, :, :, 2] = planin.rate
+    return planar_array
 
 
 def dot(a, b):
@@ -209,6 +196,7 @@ def dot(a, b):
             a[..., 2] * b[..., 2])
 
 
+# not numbified but fast anyway
 def build_planar_array(corners, sdr=None, hypo=None, check=False):
     """
     :param corners: array of shape (4, M, N, D, 3)
@@ -253,9 +241,9 @@ def build_planar_array(corners, sdr=None, hypo=None, check=False):
     width1, width2 = yy[2] - yy[0], yy[3] - yy[1]
     width = (width1 + width2) / 2.0
     length = (length1 + length2) / 2.0
-    wld = planar_array['wld']
-    wld[..., 0] = width
-    wld[..., 1] = length
+    wlr = planar_array['wlr']
+    wlr[..., 0] = width
+    wlr[..., 1] = length
 
     if check:
         # calculate the imperfect rectangle tolerance
@@ -283,7 +271,7 @@ def project(planar, points):
     def dot(a, v):  # array @ vector
         return a[:, 0] * v[0] + a[:, 1] * v[1] + a[:, 2] * v[2]
     for u, pla in enumerate(planar):
-        width, length, _ = pla.wld
+        width, length, _ = pla.wlr
         # we project all the points of the mesh on a plane that contains
         # the surface (translating coordinates of the projections to a local
         # 2d space) and at the same time calculate the distance to that
@@ -377,8 +365,8 @@ def project_back(planar, xx, yy):
     arr = numpy.zeros((3, U, N))
     for u in range(U):
         arr3N = numpy.zeros((3, N))
-        mxx = numpy.clip(xx[u], 0., planar.wld[u, 1])
-        myy = numpy.clip(yy[u], 0., planar.wld[u, 0])
+        mxx = numpy.clip(xx[u], 0., planar.wlr[u, 1])
+        myy = numpy.clip(yy[u], 0., planar.wlr[u, 0])
         for i in range(3):
             arr3N[i] = (planar.xyz[u, i, 0] +
                         planar.uv1[u, i] * mxx +
@@ -856,8 +844,8 @@ class PlanarSurface(BaseSurface):
         """
         array = self.array
         mat = mesh.xyz - array.xyz[:, 0]
-        xx = numpy.clip(mat @ array.uv1, 0, array.wld[1])
-        yy = numpy.clip(mat @ array.uv2, 0, array.wld[0])
+        xx = numpy.clip(mat @ array.uv1, 0, array.wlr[1])
+        yy = numpy.clip(mat @ array.uv2, 0, array.wlr[0])
         vectors = (array.xyz[:, 0] +
                    array.uv1 * xx.reshape(xx.shape + (1, )) +
                    array.uv2 * yy.reshape(yy.shape + (1, )))
@@ -924,14 +912,14 @@ class PlanarSurface(BaseSurface):
         Return surface's width value (in km) as computed in the constructor
         (that is mean value of left and right surface sides).
         """
-        return self.array.wld[0]
+        return self.array.wlr[0]
 
     def get_area(self):
         """
         Return surface's area value (in squared km) obtained as the product
         of surface length and width.
         """
-        return self.array.wld[0] * self.array.wld[1]
+        return self.array.wlr[0] * self.array.wlr[1]
 
     def get_bounding_box(self):
         """
