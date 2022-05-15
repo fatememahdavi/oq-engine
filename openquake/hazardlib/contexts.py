@@ -706,8 +706,8 @@ class ContextMaker(object):
             ctx['src_id'] = src.id
             ctx['mag'] = mag
             ctx['rrup'] = dists
-            for rec in ctx:
-                rec['occurrence_rate'] = planar[w].rate
+            for u, rec in enumerate(ctx):
+                rec['occurrence_rate'] = planar.wlr[u, 2]
             if fewsites:
                 ctx['clon'] = closest[0]
                 ctx['clat'] = closest[1]
