@@ -655,7 +655,7 @@ class ContextMaker(object):
             dd['clat'] = numpy.float64(0.)
         build_ctx = RecordBuilder(**dd).zeros
         siteparams = [par for par in sitecol.array.dtype.names if par in dd]
-
+        ruptparams = self.REQUIRES_RUPTURE_PARAMETERS | {'occurrence_rate'}
         rups_sites = []
         with self.ir_mon:
             allrups = numpy.array(
@@ -705,10 +705,29 @@ class ContextMaker(object):
                     closest = project_back(planar, xx, yy)  # (3, U, N)
             ctx = build_ctx((U, N))
             ctx['src_id'] = src.id
-            ctx['mag'] = mag
             ctx['rrup'] = dists
-            for u, rec in enumerate(ctx):
-                rec['occurrence_rate'] = planar.wlr[u, 2]
+            for par in ruptparams:
+                for u, rec in enumerate(ctx):
+                    if par == 'mag':
+                        rec[par] = mag
+                    elif par == 'occurrence_rate':
+                        rec[par] = planar.wlr[u, 2]
+                    elif par == 'width':
+                        rec[par] = planar.wlr[u, 0]
+                    elif par == 'strike':
+                        rec[par] = planar.sdr[u, 0]
+                    elif par == 'dip':
+                        rec[par] = planar.sdr[u, 1]
+                    elif par == 'rake':
+                        rec[par] = planar.sdr[u, 2]
+                    elif par == 'ztor':  # top edge depth
+                        rec[par] = planar.corners[u, 0, 2]
+                    elif par == 'hypo_lon':
+                        rec[par] = planar.hypo[u, 0]
+                    elif par == 'hypo_lat':
+                        rec[par] = planar.hypo[u, 1]
+                    elif par == 'hypo_depth':
+                        rec[par] = planar.hypo[u, 2]
             if fewsites:
                 ctx['clon'] = closest[0]
                 ctx['clat'] = closest[1]
