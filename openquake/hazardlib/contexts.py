@@ -699,6 +699,7 @@ class ContextMaker(object):
                     [rup.surface.array for rup in rups]
                 ).view(numpy.recarray)  # shape (U, 3)
                 dists, xx, yy = project(planar, sites.xyz)  # (3, U, N)
+                self.fix(dists)
                 if fewsites:
                     # get the closest points on the surface
                     closest = project_back(planar, xx, yy)  # (3, U, N)
@@ -712,7 +713,9 @@ class ContextMaker(object):
                 ctx['clon'] = closest[0]
                 ctx['clat'] = closest[1]
             for par in self.REQUIRES_DISTANCES - {'rrup'}:
-                ctx[par] = get_distances(planar, sites, par)  # shape (U, N)
+                dst = get_distances(planar, sites, par)
+                self.fix(dst)
+                ctx[par] = dst
             for par in siteparams:
                 sitevalues = sites.array[par]
                 for rec in ctx:  # loop on U ruptures
@@ -721,6 +724,13 @@ class ContextMaker(object):
             if len(reduced_ctx):
                 ctxs.append(reduced_ctx.flatten())
         return ctxs  # one context array for each magnitude
+
+    def fix(self, dists):
+        """
+        Replace distances < minimum_distance with minimum_distance
+        """
+        if self.minimum_distance:
+            dists[dists < self.minimum_distance] = self.minimum_distance
 
     def get_ctxs(self, src, sitecol, src_id=0, step=1):
         """
