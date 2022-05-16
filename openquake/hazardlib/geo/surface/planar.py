@@ -380,7 +380,7 @@ def get_rjb(planar, points):
     """
     :param planar: a planar recarray of shape (U, 3)
     :param points: an array of of shape (N, 3)
-    :returns: (U, N) values
+    :returns: (U, N) distances
     """
     lons, lats, deps = geo_utils.cartesian_to_spherical(points)
     out = numpy.zeros((len(planar), len(points)))
@@ -485,7 +485,7 @@ def get_rx(planar, points):
     """
     :param planar: a planar recarray of shape (U, 3)
     :param points: an array of of shape (N, 3)
-    :returns: (U, N) values
+    :returns: (U, N) distances
     """
     lons, lats, deps = geo_utils.cartesian_to_spherical(points)
     out = numpy.zeros((len(planar), len(points)))
@@ -501,7 +501,7 @@ def get_ry0(planar, points):
     """
     :param planar: a planar recarray of shape (U, 3)
     :param points: an array of of shape (N, 3)
-    :returns: (U, N) values
+    :returns: (U, N) distances
     """
     lons, lats, deps = geo_utils.cartesian_to_spherical(points)
     out = numpy.zeros((len(planar), len(points)))
@@ -524,11 +524,29 @@ def get_rhypo(planar, points):
     """
     :param planar: a planar recarray of shape (U, 3)
     :param points: an array of of shape (N, 3)
-    :returns: (U, N) values
+    :returns: (U, N) distances
     """
     out = numpy.zeros((len(planar), len(points)))
     hypo = numpy.zeros((len(planar), 3))
     hypo[:, :] = planar.hypo  # convert unaligned->aligned
+    hypo = fast_spherical_to_cartesian(hypo[:, 0], hypo[:, 1], hypo[:, 2])
+    for u, pla in enumerate(planar):
+        out[u] = geo_utils.min_distance(hypo[u], points)
+    return out
+
+
+# numbified below
+def get_repi(planar, points):
+    """
+    :param planar: a planar recarray of shape (U, 3)
+    :param points: an array of of shape (N, 3)
+    :returns: (U, N) distances
+    """
+    out = numpy.zeros((len(planar), len(points)))
+    # convert unaligned->aligned
+    hypo = numpy.zeros((len(planar), 3))
+    hypo[:, 0] = planar.hypo[:, 0]
+    hypo[:, 1] = planar.hypo[:, 1]
     hypo = fast_spherical_to_cartesian(hypo[:, 0], hypo[:, 1], hypo[:, 2])
     for u, pla in enumerate(planar):
         out[u] = geo_utils.min_distance(hypo[u], points)
@@ -546,22 +564,15 @@ if numba:
         numba.float64[:, :],
         numba.float64[:, :]
     ))(project_back)
-    get_rjb = compile(numba.float64[:, :](
+    comp = compile(numba.float64[:, :](
         planar_nt[:, :],
         numba.float64[:, :],
-    ))(get_rjb)
-    get_rx = compile(numba.float64[:, :](
-        planar_nt[:, :],
-        numba.float64[:, :],
-    ))(get_rx)
-    get_ry0 = compile(numba.float64[:, :](
-        planar_nt[:, :],
-        numba.float64[:, :],
-    ))(get_ry0)
-    get_rhypo = compile(numba.float64[:, :](
-        planar_nt[:, :],
-        numba.float64[:, :],
-    ))(get_rhypo)
+    ))
+    get_rjb = comp(get_rjb)
+    get_rx = comp(get_rx)
+    get_ry0 = comp(get_ry0)
+    get_rhypo = comp(get_rhypo)
+    get_repi = comp(get_repi)
 
 
 def get_distances_planar(planar, sites, dist_type):
