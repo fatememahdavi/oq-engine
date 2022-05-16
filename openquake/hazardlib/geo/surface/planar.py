@@ -549,6 +549,7 @@ def get_repi(planar, points):
     hypo[:, 1] = planar.hypo[:, 1]
     hypo = fast_spherical_to_cartesian(hypo[:, 0], hypo[:, 1], hypo[:, 2])
     for u, pla in enumerate(planar):
+        # TODO: reduce depths to zero even for the points
         out[u] = geo_utils.min_distance(hypo[u], points)
     return out
 
@@ -564,10 +565,7 @@ if numba:
         numba.float64[:, :],
         numba.float64[:, :]
     ))(project_back)
-    comp = compile(numba.float64[:, :](
-        planar_nt[:, :],
-        numba.float64[:, :],
-    ))
+    comp = compile(numba.float64[:, :](planar_nt[:, :], numba.float64[:, :]))
     get_rjb = comp(get_rjb)
     get_rx = comp(get_rx)
     get_ry0 = comp(get_ry0)
