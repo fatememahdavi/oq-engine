@@ -436,7 +436,7 @@ def get_rjb(planar, points):
         # distances from all the target points to each of surface's
         # corners' projections (we might not need all of those but it's
         # better to do that calculation once for all).
-        corners = fast_spherical_to_cartesian(clons, clats)
+        corners = fast_spherical_to_cartesian(clons, clats, numpy.zeros(4))
         # shape (4, 3) and (N, 3) -> (4, N) -> N
         dists_to_corners = numpy.array([geo_utils.min_distance(point, corners)
                                         for point in points])
@@ -519,6 +519,22 @@ def get_ry0(planar, points):
     return out
 
 
+# numbified below
+def get_rhypo(planar, points):
+    """
+    :param planar: a planar recarray of shape (U, 3)
+    :param points: an array of of shape (N, 3)
+    :returns: (U, N) values
+    """
+    out = numpy.zeros((len(planar), len(points)))
+    hypo = numpy.zeros((len(planar), 3))
+    hypo[:, :] = planar.hypo  # convert unaligned->aligned
+    hypo = fast_spherical_to_cartesian(hypo[:, 0], hypo[:, 1], hypo[:, 2])
+    for u, pla in enumerate(planar):
+        out[u] = geo_utils.min_distance(hypo[u], points)
+    return out
+
+
 if numba:
     planar_nt = numba.from_dtype(planar_array_dt)
     project = compile(numba.float64[:, :, :](
@@ -542,6 +558,10 @@ if numba:
         planar_nt[:, :],
         numba.float64[:, :],
     ))(get_ry0)
+    get_rhypo = compile(numba.float64[:, :](
+        planar_nt[:, :],
+        numba.float64[:, :],
+    ))(get_rhypo)
 
 
 def get_distances_planar(planar, sites, dist_type):
