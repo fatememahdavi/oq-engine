@@ -650,9 +650,11 @@ class ContextMaker(object):
         fewsites = len(sitecol) <= self.max_sites_disagg
         dd = self.defaultdict.copy()
         dd['probs_occur'] = numpy.zeros(0)
+        if self.collapse_level >= 0:
+            dd['mdvbin'] = U32(0)
         if fewsites:
-            dd['clon'] = numpy.float64(0.)
-            dd['clat'] = numpy.float64(0.)
+            dd['clon'] = F64(0)
+            dd['clat'] = F64(0)
         build_ctx = RecordBuilder(**dd).zeros
         siteparams = [par for par in sitecol.array.dtype.names if par in dd]
         ruptparams = self.REQUIRES_RUPTURE_PARAMETERS | {'occurrence_rate'}
@@ -728,6 +730,8 @@ class ContextMaker(object):
                         rec[par] = planar.hypo[u, 1]
                     elif par == 'hypo_depth':
                         rec[par] = planar.hypo[u, 2]
+            if self.collapse_level >= 0:
+                ctx['mdvbin'] = self.collapser.calc_mdvbin(ctx)
             if fewsites:
                 ctx['clon'] = closest[0]
                 ctx['clat'] = closest[1]
