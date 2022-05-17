@@ -721,7 +721,7 @@ class ContextMaker(object):
                     elif par == 'rake':
                         rec[par] = planar.sdr[u, 2]
                     elif par == 'ztor':  # top edge depth
-                        rec[par] = planar.corners[u, 0, 2]
+                        rec[par] = planar.corners[u, 2, 0]
                     elif par == 'hypo_lon':
                         rec[par] = planar.hypo[u, 0]
                     elif par == 'hypo_lat':
