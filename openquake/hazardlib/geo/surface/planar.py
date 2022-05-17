@@ -380,7 +380,7 @@ def get_rjb(planar, points):
     """
     :param planar: a planar recarray of shape (U, 3)
     :param points: an array of of shape (N, 3)
-    :returns: (U, N) distances
+    :returns: (U, N) values
     """
     lons, lats, deps = geo_utils.cartesian_to_spherical(points)
     out = numpy.zeros((len(planar), len(points)))
@@ -527,11 +527,14 @@ def get_rhypo(planar, points):
     :returns: (U, N) distances
     """
     out = numpy.zeros((len(planar), len(points)))
-    hypo = numpy.zeros((len(planar), 3))
-    hypo[:, :] = planar.hypo  # convert unaligned->aligned
-    hypo = fast_spherical_to_cartesian(hypo[:, 0], hypo[:, 1], hypo[:, 2])
+    lons, lats, deps = geo_utils.cartesian_to_spherical(points)
+    hypo = planar.hypo
     for u, pla in enumerate(planar):
-        out[u] = geo_utils.min_distance(hypo[u], points)
+        hdist = geodetic.distances(
+            math.radians(hypo[u, 0]), math.radians(hypo[u, 1]),
+            numpy.radians(lons), numpy.radians(lats))
+        vdist = hypo[u, 2] - deps
+        out[u] = numpy.sqrt(hdist ** 2 + vdist ** 2)
     return out
 
 
@@ -543,14 +546,12 @@ def get_repi(planar, points):
     :returns: (U, N) distances
     """
     out = numpy.zeros((len(planar), len(points)))
-    # convert unaligned->aligned
-    hypo = numpy.zeros((len(planar), 3))
-    hypo[:, 0] = planar.hypo[:, 0]
-    hypo[:, 1] = planar.hypo[:, 1]
-    hypo = fast_spherical_to_cartesian(hypo[:, 0], hypo[:, 1], hypo[:, 2])
+    lons, lats, deps = geo_utils.cartesian_to_spherical(points)
+    hypo = planar.hypo
     for u, pla in enumerate(planar):
-        # TODO: reduce depths to zero even for the points
-        out[u] = geo_utils.min_distance(hypo[u], points)
+        out[u] = geodetic.distances(
+            math.radians(hypo[u, 0]), math.radians(hypo[u, 1]),
+            numpy.radians(lons), numpy.radians(lats))
     return out
 
 

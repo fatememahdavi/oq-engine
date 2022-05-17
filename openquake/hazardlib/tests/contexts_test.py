@@ -569,7 +569,6 @@ class PlanarDistancesTestCase(unittest.TestCase):
         aac(ctx.repi, [27.79873166, 38.91822433])
         aac(ctx.azimuth, [0., 0.])
 
-        # check that get_distances_planar returns the expected results
         magd = [(r, mag) for mag, r in src.get_annual_occurrence_rates()]
         planin = src.get_planin(magd, npd.data, hdd.data)
         planar = build_planar(planin, loc.x, loc.y, usd, lsd)[0, 0]
