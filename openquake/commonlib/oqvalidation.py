@@ -486,6 +486,11 @@ modal_damage_state:
   Example: *modal_damage_state = true*.
   Default: false
 
+num_cores:
+   Number of cores to use.
+   Example: *num_cores=4*.
+   Default: whateve is set in openquake.cfg. -1 means all cores.
+
 num_epsilon_bins:
   Number of epsilon bins in disaggregation calculations.
   Example: *num_epsilon_bins = 3*.
@@ -905,6 +910,7 @@ class OqParam(valid.ParamSet):
     modal_damage_state = valid.Param(valid.boolean, False)
     number_of_ground_motion_fields = valid.Param(valid.positiveint)
     number_of_logic_tree_samples = valid.Param(valid.positiveint, 0)
+    num_cores = valid.Param(int, int(config.distribution.num_cores))
     num_epsilon_bins = valid.Param(valid.positiveint, 1)
     num_rlzs_disagg = valid.Param(valid.positiveint, 1)
     poes = valid.Param(valid.probabilities, [])

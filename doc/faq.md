@@ -50,6 +50,9 @@ If you are on a cluster you must edit the section [zworkers] and the parameter
 `host_cores`, replacing the `-1` with the number of cores to be used on
 each machine.
 
+If you want to limit the number of cores used in a specific calculation,
+you can set `num_cores` in the job.ini file.
+
 ### Help! I am running out of memory!
 
 If you are on a laptop, the first thing to do is close all memory consuming

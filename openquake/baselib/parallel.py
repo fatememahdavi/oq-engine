@@ -644,8 +644,8 @@ def getargnames(task_func):
 class Starmap(object):
     pids = ()
     running_tasks = []  # currently running tasks
-    num_cores = int(config.distribution.get('num_cores', '0'))
-    if not num_cores:
+    num_cores = int(config.distribution.num_cores)
+    if num_cores < 0:
         # use only the "visible" cores, not the total system cores
         # if the underlying OS supports it (macOS does not)
         try:
