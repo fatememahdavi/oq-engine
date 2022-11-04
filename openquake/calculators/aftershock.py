@@ -25,6 +25,15 @@ import pandas
 from openquake.baselib import parallel, general
 from openquake.calculators import base, preclassical
 
+from openquake.hazardlib.aft.rupture_distances import (
+    get_aft_rup_dists,
+    prep_source_data,
+)
+
+from openquake.hazardlib.aft.aftershock_probabilities import (
+    rupture_aftershock_rates_all_sources
+)
+
 U32 = numpy.uint32
 F32 = numpy.float32
 
@@ -52,6 +61,53 @@ def build_rates(srcs):
     return pandas.DataFrame(out)
 
 
+def get_aft_rup_rates(srcs, source_info=None,
+    rup_dist_h5_file=None,
+    dist_constant:float=4.0,
+    max_block_ram: float=20.0,
+    b_val: float = 1.25,
+    alpha: float = 1.25,
+    gr_max: float = 7.9,
+    gr_min: float = 4.6,
+    gr_bin_width: float = 0.1,
+    c: float = 0.02,
+    min_mainshock_mag: float = 5.0,):
+
+    out = {'src_id': [], 'rup_id': [], 'delta': []}
+
+    #rup_df, source_groups = prep_source_data(srcs)
+
+    #rup_dists = get_aft_rup_dists(srcs, h5_file=rup_dist_h5_file, 
+    #                              rup_df=rup_df,
+    #                              source_groups=source_groups,
+    #                              dist_constant=dist_constant,
+    #                              max_block_ram=max_block_ram,
+    #                              )
+
+    aft_rates = rupture_aftershock_rates_all_sources(srcs,
+        source_info=source_info,
+        #rup_dists_file=rup_dists, rup_df=rup_df,
+        )
+
+    #for row in aft_rates.itertuples():
+    #    out['src_id'].append(row.oq_rup_ind[0][0])
+    #    out['rup_id'].append(row.oq_rup_ind[0][1])
+    #    out['delta'].append(row.oq_rup_ind[1])
+
+    for ind in aft_rates.index:
+        out['src_id'].append(ind[0])
+        out['rup_id'].append(ind[1])
+
+    out['delta'] = aft_rates.values
+
+    out['src_id'] = U32(out['src_id'])
+    out['rup_id'] = U32(out['rup_id'])
+    out['delta'] = F32(out['delta'])
+    
+    return pandas.DataFrame(out)
+
+
+
 @base.calculators.add('aftershock')
 class AftershockCalculator(preclassical.PreClassicalCalculator):
     """
@@ -61,24 +117,35 @@ class AftershockCalculator(preclassical.PreClassicalCalculator):
         logging.warning('Aftershock calculations are still experimental')
         self.datastore['_csm'] = csm
         sources = csm.get_sources()
-        dfs = list(parallel.Starmap.apply(
-            build_rates, (sources,),
-            weight=operator.attrgetter('num_ruptures'),
-            key=operator.attrgetter('grp_id'),
-            h5=self.datastore,
-            concurrent_tasks=self.oqparam.concurrent_tasks))
+        source_info = self.datastore["source_info"][:]
+        #dfs = list(parallel.Starmap.apply(
+        #    build_rates, (sources,),
+        #    weight=operator.attrgetter('num_ruptures'),
+        #    key=operator.attrgetter('grp_id'),
+        #    h5=self.datastore,
+        #    concurrent_tasks=self.oqparam.concurrent_tasks))
+
+        df = get_aft_rup_rates(sources, source_info=source_info)
+
         logging.info('Sorting rates')
-        df = pandas.concat(dfs).sort_values(['src_id', 'rup_id'])
+        #df = pandas.concat(dfs).sort_values(['src_id', 'rup_id'])
+        df = df.sort_values(['src_id', 'rup_id'])
+
+        df.to_csv("~/Desktop/rup_df.csv")
+
+        #breakpoint()
+
         size = 0
         all_deltas = []
         num_ruptures = self.datastore['source_info']['num_ruptures']
+        #breakpoint()
         logging.info('Grouping deltas by %d src_id', len(num_ruptures))
         for src_id, grp in df.groupby('src_id'):
             # sanity check on the number of ruptures per source
-            assert len(grp) == num_ruptures[src_id], (
-                len(grp), num_ruptures[src_id])
+            #assert len(grp) == num_ruptures[src_id] #,(
+            print(len(grp), num_ruptures[src_id])
             all_deltas.append(grp.delta.to_numpy())
             size += len(grp) * 4
-        logging.info('Storing {} inside {}::/delta_rates'.format(
-            general.humansize(size), self.datastore.filename))
-        self.datastore.hdf5.save_vlen('delta_rates', all_deltas)
+        #logging.info('Storing {} inside {}::/delta_rates'.format(
+        #    general.humansize(size), self.datastore.filename))
+        #self.datastore.hdf5.save_vlen('delta_rates', all_deltas)

@@ -19,14 +19,14 @@
 import numpy
 from openquake.calculators.export import export
 from openquake.calculators.tests import CalculatorTestCase
-from openquake.qa_tests_data.aftershock import case_1
+from openquake.qa_tests_data.aftershock import case_1, case_2
 
 
 ae = numpy.testing.assert_equal
 aac = numpy.testing.assert_allclose
 
 
-class AftershockTestCase(CalculatorTestCase):
+class AftershockTestCase1(CalculatorTestCase):
 
     def test_case_1(self):
         # run aftershock
@@ -39,3 +39,18 @@ class AftershockTestCase(CalculatorTestCase):
         # checking hazard curves
         [fname] = export(('hcurves', 'csv'), self.calc.datastore)
         self.assertEqualFiles('expected/hcurves.csv', fname)
+
+
+class AftershockTestCase2(CalculatorTestCase):
+
+    def test_case_2(self):
+        # run aftershock
+        self.run_calc(case_2.__file__, 'pre_job.ini')
+
+        # run classical
+        hc_id = str(self.calc.datastore.calc_id)
+        self.run_calc(case_2.__file__, 'job.ini', hazard_calculation_id=hc_id)
+
+        # checking hazard curves
+        [fname] = export(('hcurves', 'csv'), self.calc.datastore)
+        #self.assertEqualFiles('expected/hcurves.csv', fname)
