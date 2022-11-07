@@ -26,22 +26,30 @@ ae = numpy.testing.assert_equal
 aac = numpy.testing.assert_allclose
 
 
-class AftershockTestCase1(CalculatorTestCase):
-
-    def test_case_1(self):
-        # run aftershock
-        self.run_calc(case_1.__file__, 'pre_job.ini')
-
-        # run classical
-        hc_id = str(self.calc.datastore.calc_id)
-        self.run_calc(case_1.__file__, 'job.ini', hazard_calculation_id=hc_id)
-
-        # checking hazard curves
-        [fname] = export(('hcurves', 'csv'), self.calc.datastore)
-        self.assertEqualFiles('expected/hcurves.csv', fname)
+#class AftershockTestCase1(CalculatorTestCase):
+#
+#    def test_case_1(self):
+#        # run aftershock
+#        self.run_calc(case_1.__file__, 'pre_job.ini')
+#
+#        # run classical
+#        hc_id = str(self.calc.datastore.calc_id)
+#        self.run_calc(case_1.__file__, 'job.ini', hazard_calculation_id=hc_id)
+#
+#        # checking hazard curves
+#        [fname] = export(('hcurves', 'csv'), self.calc.datastore)
+#        self.assertEqualFiles('expected/hcurves.csv', fname)
 
 
 class AftershockTestCase2(CalculatorTestCase):
+
+    def test_case_2_no_aft(self):
+        self.run_calc(case_2.__file__, 'no_aft_job.ini')
+
+        # checking hazard curves
+        [fname] = export(('hcurves', 'csv'), self.calc.datastore)
+        #breakpoint()
+
 
     def test_case_2(self):
         # run aftershock
@@ -53,4 +61,5 @@ class AftershockTestCase2(CalculatorTestCase):
 
         # checking hazard curves
         [fname] = export(('hcurves', 'csv'), self.calc.datastore)
+        #breakpoint()
         #self.assertEqualFiles('expected/hcurves.csv', fname)

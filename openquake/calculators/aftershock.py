@@ -75,24 +75,9 @@ def get_aft_rup_rates(srcs, source_info=None,
 
     out = {'src_id': [], 'rup_id': [], 'delta': []}
 
-    #rup_df, source_groups = prep_source_data(srcs)
-
-    #rup_dists = get_aft_rup_dists(srcs, h5_file=rup_dist_h5_file, 
-    #                              rup_df=rup_df,
-    #                              source_groups=source_groups,
-    #                              dist_constant=dist_constant,
-    #                              max_block_ram=max_block_ram,
-    #                              )
-
     aft_rates = rupture_aftershock_rates_all_sources(srcs,
-        source_info=source_info,
-        #rup_dists_file=rup_dists, rup_df=rup_df,
+        source_info=source_info, gr_bin_width=gr_bin_width
         )
-
-    #for row in aft_rates.itertuples():
-    #    out['src_id'].append(row.oq_rup_ind[0][0])
-    #    out['rup_id'].append(row.oq_rup_ind[0][1])
-    #    out['delta'].append(row.oq_rup_ind[1])
 
     for ind in aft_rates.index:
         out['src_id'].append(ind[0])
@@ -107,7 +92,6 @@ def get_aft_rup_rates(srcs, source_info=None,
     return pandas.DataFrame(out)
 
 
-
 @base.calculators.add('aftershock')
 class AftershockCalculator(preclassical.PreClassicalCalculator):
     """
@@ -118,34 +102,22 @@ class AftershockCalculator(preclassical.PreClassicalCalculator):
         self.datastore['_csm'] = csm
         sources = csm.get_sources()
         source_info = self.datastore["source_info"][:]
-        #dfs = list(parallel.Starmap.apply(
-        #    build_rates, (sources,),
-        #    weight=operator.attrgetter('num_ruptures'),
-        #    key=operator.attrgetter('grp_id'),
-        #    h5=self.datastore,
-        #    concurrent_tasks=self.oqparam.concurrent_tasks))
 
-        df = get_aft_rup_rates(sources, source_info=source_info)
+        df = get_aft_rup_rates(sources, source_info=source_info,
+                                gr_bin_width=self.oqparam.width_of_mfd_bin)
 
         logging.info('Sorting rates')
-        #df = pandas.concat(dfs).sort_values(['src_id', 'rup_id'])
         df = df.sort_values(['src_id', 'rup_id'])
-
-        df.to_csv("~/Desktop/rup_df.csv")
-
-        #breakpoint()
-
         size = 0
         all_deltas = []
         num_ruptures = self.datastore['source_info']['num_ruptures']
-        #breakpoint()
         logging.info('Grouping deltas by %d src_id', len(num_ruptures))
         for src_id, grp in df.groupby('src_id'):
             # sanity check on the number of ruptures per source
-            #assert len(grp) == num_ruptures[src_id] #,(
-            print(len(grp), num_ruptures[src_id])
+            assert len(grp) == num_ruptures[src_id], (
+                len(grp), num_ruptures[src_id])
             all_deltas.append(grp.delta.to_numpy())
             size += len(grp) * 4
-        #logging.info('Storing {} inside {}::/delta_rates'.format(
-        #    general.humansize(size), self.datastore.filename))
-        #self.datastore.hdf5.save_vlen('delta_rates', all_deltas)
+        logging.info('Storing {} inside {}::/delta_rates'.format(
+            general.humansize(size), self.datastore.filename))
+        self.datastore.hdf5.save_vlen('delta_rates', all_deltas)
