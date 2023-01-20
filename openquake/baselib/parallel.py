@@ -214,7 +214,7 @@ GB = 1024 ** 3
 host_cores = config.zworkers.host_cores.split(',')
 
 
-@submit.add('no')
+@submit.add('no', 'compss')
 def no_submit(self, func, args, monitor):
     return safely_call(func, args, self.task_no, monitor)
 
@@ -251,7 +251,7 @@ def oq_distribute(task=None):
     :returns: the value of OQ_DISTRIBUTE or config.distribution.oq_distribute
     """
     dist = os.environ.get('OQ_DISTRIBUTE', config.distribution.oq_distribute)
-    if dist not in ('no', 'processpool', 'threadpool', 'zmq', 'ipp'):
+    if dist not in ('no', 'processpool', 'threadpool', 'zmq', 'ipp', 'compss'):
         raise ValueError('Invalid oq_distribute=%s' % dist)
     return dist
 
@@ -502,6 +502,11 @@ def safely_call(func, args, task_no=0, mon=dummy_mon):
             sentbytes += len(res.pik)
             if res.msg == 'TASK_ENDED':
                 break
+
+
+if oq_distribute() == 'compss':
+    from pycompss.api.task import task
+    safely_call = task()(safely_call)
 
 
 if oq_distribute() == 'ipp':
