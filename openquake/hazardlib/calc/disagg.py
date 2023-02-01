@@ -27,7 +27,6 @@ import collections
 from functools import partial
 import numpy
 import scipy.stats
-from scipy.special import ndtr
 
 from openquake.baselib.general import AccumDict, groupby, pprod
 from openquake.hazardlib.calc import filters
@@ -170,7 +169,8 @@ def disaggregate(ctx, cmaker, g_by_z, iml2dict, eps3, sid=0, bin_edges=(),
     # U - Number of contexts (i.e. ruptures if there is a single site)
     # M - Number of IMTs
     # G - Number of gsims
-    mean_std = cmaker.get_mean_stds([ctx])[:2]  # (2, G, M, U)
+    mean_std = cmaker.get_mean_stds([ctx], split_by_mag=True)[:2]
+    # shape (2, G, M, U)
     poes = numpy.zeros((U, E, M, P, Z))
     pnes = numpy.ones((U, E, M, P, Z))
     # Multi-dimensional iteration
