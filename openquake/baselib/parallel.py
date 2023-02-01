@@ -212,11 +212,37 @@ sys.setrecursionlimit(2000)  # raised to make pickle happier
 submit = CallableDict()
 GB = 1024 ** 3
 host_cores = config.zworkers.host_cores.split(',')
+compss_call = None
 
 
-@submit.add('no', 'compss')
+def oq_distribute(task=None):
+    """
+    :returns: the value of OQ_DISTRIBUTE or config.distribution.oq_distribute
+    """
+    dist = os.environ.get('OQ_DISTRIBUTE', config.distribution.oq_distribute)
+    if dist not in ('no', 'processpool', 'threadpool', 'zmq', 'ipp', 'compss'):
+        raise ValueError('Invalid oq_distribute=%s' % dist)
+    return dist
+
+
+if oq_distribute() == 'compss':
+    from pycompss.api.task import task
+    from pycompss.api.api import compss_wait_on
+elif oq_distribute() == 'ipp':
+    from ipyparallel import Cluster
+
+
+@submit.add('no')
 def no_submit(self, func, args, monitor):
     return safely_call(func, args, self.task_no, monitor)
+
+
+@submit.add('compss')
+def compss_submit(self, func, args, monitor):
+    global compss_call
+    if not compss_call:  # first time
+        compss_call = task()(safely_call)
+    return compss_call(func, args, self.task_no, monitor)
 
 
 @submit.add('processpool')
@@ -247,16 +273,6 @@ def zmq_submit(self, func, args, monitor):
 def ipp_submit(self, func, args, monitor):
     return self.executor.submit(
         safely_call, func, args, self.task_no, monitor)
-
-
-def oq_distribute(task=None):
-    """
-    :returns: the value of OQ_DISTRIBUTE or config.distribution.oq_distribute
-    """
-    dist = os.environ.get('OQ_DISTRIBUTE', config.distribution.oq_distribute)
-    if dist not in ('no', 'processpool', 'threadpool', 'zmq', 'ipp', 'compss'):
-        raise ValueError('Invalid oq_distribute=%s' % dist)
-    return dist
 
 
 def init_workers():
@@ -520,16 +536,6 @@ def safely_call(func, args, task_no=0, mon=dummy_mon):
             end = Result(None, mon, msg='TASK_ENDED')
             end.pik = FakePickle(sentbytes)
             zsocket.send(end)
-
-
-if oq_distribute() == 'compss':
-    from pycompss.api.task import task
-    from pycompss.api.api import compss_wait_on
-    safely_call = task()(safely_call)
-
-
-if oq_distribute() == 'ipp':
-    from ipyparallel import Cluster
 
 
 class IterResult(object):
