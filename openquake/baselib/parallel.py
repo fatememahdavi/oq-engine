@@ -524,6 +524,7 @@ def safely_call(func, args, task_no=0, mon=dummy_mon):
 
 if oq_distribute() == 'compss':
     from pycompss.api.task import task
+    from pycompss.api.api import compss_wait_on
     safely_call = task()(safely_call)
 
 
@@ -942,6 +943,9 @@ class Starmap(object):
                 yield res
         self.log_percent()
         self.socket.__exit__(None, None, None)
+        if self.distribute == 'compss':
+            for tsk in self.tasks:
+                compss_wait_on(tsk)
         self.tasks.clear()
         if len(self.busytime) > 1:
             times = numpy.array(list(self.busytime.values()))
