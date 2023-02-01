@@ -228,6 +228,7 @@ def oq_distribute(task=None):
 if oq_distribute() == 'compss':
     from pycompss.api.task import task
     from pycompss.api.api import compss_wait_on
+    from pycompss.api.on_failure import on_failure
 elif oq_distribute() == 'ipp':
     from ipyparallel import Cluster
 
@@ -241,7 +242,7 @@ def no_submit(self, func, args, monitor):
 def compss_submit(self, func, args, monitor):
     global compss_call
     if not compss_call:  # first time
-        compss_call = task()(safely_call)
+        compss_call = on_failure(management='FAIL')(task()(safely_call))
     return compss_call(func, args, self.task_no, monitor)
 
 
