@@ -92,15 +92,13 @@ def compute_disagg(dis_triples, src_mutex, wdic, monitor):
         a dictionary for each site containing a 6D matrix of rates
     """
     for dis, triples in dis_triples:
-        for magi in range(dis.Ma):
-            with monitor('init disagg', measuremem=False):
-                try:
-                    dis.init(magi, src_mutex, monitor)
-                except disagg.FarAwayRupture:
-                    continue
+        with monitor('init disagg', measuremem=False):
+            dis.init(src_mutex, monitor)
+        for magi in dis.slc:
             res = {'trti': dis.cmaker.trti, 'magi': magi, 'sid': dis.sid}
             for g, rlz, iml2 in triples:
-                rates6D = disagg.to_rates(dis.disagg6D(iml2, g))
+                probs6D = dis.disagg6D(iml2, g, magi)
+                rates6D = disagg.to_rates(probs6D)
                 if wdic:
                     if 0 not in res:
                         res[0] = 0

@@ -205,13 +205,11 @@ def get_eps4(eps_edges, truncation_level):
 
 
 # NB: this function is the crucial bit for performance!
-def _disaggregate(ctx, mea, std, cmaker, g, iml2, bin_edges, epsstar=False,
+def _disaggregate(ctx, mea_std, cmaker, iml2, bin_edges, epsstar=False,
                   mon=Monitor()):
     # ctx: a recarray of size U for a single site and magnitude bin
-    # mea: array of shape (G, M, U)
-    # std: array of shape (G, M, U)
+    # mea_std: array of shape (2, G, M, U)
     # cmaker: a ContextMaker instance
-    # g: a gsim index
     # iml2: an array of shape (M, P) of logarithmic intensities
     # eps_bands: an array of E elements obtained from the E+1 eps_edges
     # bin_edges: a tuple of 5 bin edges (mag, dist, lon, lat, eps)
@@ -235,7 +233,7 @@ def _disaggregate(ctx, mea, std, cmaker, g, iml2, bin_edges, epsstar=False,
         for (m, p), iml in numpy.ndenumerate(iml2):
             if iml == -numpy.inf:  # zero hazard
                 continue
-            lvls = (iml - mea[g, m]) / std[g, m]
+            lvls = (iml - mea_std[0, m]) / mea_std[1, m]
             # Find the index in the epsilons-bins vector where lvls (which are
             # epsilons) should be included
             idxs = numpy.searchsorted(eps_edges, lvls)
@@ -430,26 +428,24 @@ class Disaggregator(object):
         ctx = numpy.concatenate(ctxs).view(numpy.recarray)
         if len(ctx) == 0:
             raise FarAwayRupture('No ruptures affecting site #%d' % sid)
-
-        # build the magnitude bins
-        self.fullmagi = numpy.searchsorted(bin_edges[0], ctx.mag) - 1
-        self.fullmagi[self.fullmagi == -1] = 0  # magnitude on the edge
-
         self.fullctx = ctx
 
-    def init(self, magi, src_mutex, monitor=Monitor()):
-        self.magi = magi
+    def init(self, src_mutex, monitor=Monitor()):
         self.src_mutex = src_mutex
         self.mon = monitor
-        self.ctx = self.fullctx[self.fullmagi == magi]
-        if len(self.ctx) == 0:
-            raise FarAwayRupture
+
+        # build the magnitude bins
+        self.fullctx.sort(order='mag')
+        fullmagi = numpy.searchsorted(
+            self.bin_edges[0], self.fullctx.mag) - 1
+        fullmagi[fullmagi == -1] = 0  # magnitude on the edge
+        self.slc = {magi: slice(start, stop)
+                    for magi, start, stop in idx_start_stop(fullmagi)}
+        self.mea_std = self.cmaker.get_mean_stds(
+            [self.fullctx], split_by_mag=True)[:2]
         if self.src_mutex:
             # make sure we can use idx_start_stop below
             self.ctx.sort(order='src_id')
-        self.mea, self.std = self.cmaker.get_mean_stds(
-            [self.ctx], split_by_mag=True)[:2]
-        if self.src_mutex:
             mat = idx_start_stop(self.ctx.src_id)  # shape (n, 3)
             src_ids = mat[:, 0]  # subset contributing to the given magi
             self.src_mutex['start'] = mat[:, 1]
@@ -458,20 +454,21 @@ class Disaggregator(object):
                                               self.src_mutex['weight'])
                             if s in src_ids]
 
-    def disagg6D(self, iml2, g):
+    def disagg6D(self, iml2, g, magi):
         """
         Disaggregate a single realization.
 
         :returns: a 6D matrix of shape (D, Lo, La, E, M, P)
         """
+        slc = self.slc[magi]
         # compute the logarithmic intensities
         imlog2 = numpy.zeros_like(iml2)
         for m, imt in enumerate(self.cmaker.imts):
             imlog2[m] = to_distribution_values(iml2[m], imt)
         if not self.src_mutex:
-            return _disaggregate(self.ctx, self.mea, self.std, self.cmaker,
-                                 g, imlog2, self.bin_edges, self.epsstar,
-                                 self.mon)
+            return _disaggregate(self.fullctx[slc], self.mea_std[:, g, :, slc],
+                                 self.cmaker, imlog2, self.bin_edges,
+                                 self.epsstar, self.mon)
 
         # else average on the src_mutex weights
         mats = []
