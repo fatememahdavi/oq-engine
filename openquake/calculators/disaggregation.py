@@ -129,6 +129,7 @@ def compute_disagg(dstore, ctxt, sitecol, cmaker, bin_edges, src_mutex, rwdic,
                     else:
                         res['mean'] += rates6D * rwdic[rlz]
             out.append(res)
+    print(rlzs)
     return out
 
 
@@ -405,7 +406,14 @@ class DisaggregationCalculator(base.HazardCalculator):
                 self.save_disagg_results(indv, 'disagg-rlzs')
             if mean:  # save mean PMFs
                 self.save_disagg_results(mean, 'disagg-stats')
-
+        if indv and mean and 'Mag' in self.oqparam.disagg_outputs:
+            # sanity check
+            ws = self.datastore['weights'][:]
+            arr = self.datastore['disagg-rlzs/Mag'][:]  # N, Ma, M, P, Z
+            mean_rates = -numpy.log(1-arr) @ ws
+            mean = self.datastore['disagg-stats/Mag'][..., 0]
+            numpy.testing.assert_allclose(-numpy.log(1-mean), mean_rates) 
+                
     def save_bin_edges(self, all_edges):
         """
         Save disagg-bins
