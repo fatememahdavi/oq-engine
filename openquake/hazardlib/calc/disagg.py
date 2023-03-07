@@ -643,24 +643,6 @@ def get_smr(source_id):
     return smr
 
 
-def reduce_groups(src_groups, source_id):
-    """
-    :returns: a reduced list of groups containing fragments of the same source
-    """
-    groups = []
-    for sg in src_groups:
-        ok = []
-        for src in sg:
-            if re.split('[:;.]', src.source_id)[0] == source_id:
-                src.trt_smr = get_smr(src.source_id)
-                ok.append(src)
-        if ok:
-            grp = copy.copy(sg)
-            grp.sources = ok
-            groups.append(grp)
-    return groups
-
-
 def by_source(groups, sitecol, reduced_lt, edges_shapedic, oq, monitor):
     """
     Compute disaggregation for the given source.

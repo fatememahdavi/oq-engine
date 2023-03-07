@@ -913,7 +913,7 @@ def disagg_by_source(parent, csm, mon):
         relt = FullLogicTree(smlt, gslt, 'reduce-rlzs')
         logging.info('Considering source %s (%d realizations)',
                      source_id, relt.get_num_paths())
-        groups = disagg.reduce_groups(csm.src_groups, source_id)
+        groups = relt.reduce_groups(csm.src_groups)
         out.update(disagg.by_source(groups, sitecol, relt, edges_shp, oq, mon))
     items = []
     for source_id, (disagg_rates, rates2D) in out.items():

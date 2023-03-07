@@ -1038,6 +1038,18 @@ class FullLogicTree(object):
             return int(smr)
         return self.trti[trt] * TWO24 + int(smr)
 
+    def set_trt_smr(self, src):
+        """
+        :param src: source object
+        """
+        trti = self.trti[src.tectonic_region_type]
+        branch_ids = set(self.source_model_lt.brs_by_src[src.source_id])
+        tup = tuple(trti * TWO24 + sm_rlz.ordinal
+                    for sm_rlz in self.sm_rlzs
+                    if set(sm_rlz.lt_path) & branch_ids)
+        print('Setting %s on %s' % (tup, src))
+        src.trt_smr = tup
+
     def get_trt_smrs(self, smr):
         """
         :param smr: effective realization index
@@ -1045,6 +1057,24 @@ class FullLogicTree(object):
         """
         nt = len(self.gsim_lt.values)
         return smr + numpy.arange(nt) * TWO24
+
+    def reduce_groups(self, src_groups, source_id=None):
+        """
+        Filter the sources and set the tuple .trt_smr
+        """
+        groups = []
+        source_id = source_id or self.source_model_lt.source_id
+        for sg in src_groups:
+            ok = []
+            for src in sg:
+                if re.split('[:;.]', src.source_id)[0] == source_id:
+                    self.set_trt_smr(src)
+                    ok.append(src)
+            if ok:
+                grp = copy.copy(sg)
+                grp.sources = ok
+                groups.append(grp)
+        return groups
 
     def gsim_by_trt(self, rlz):
         """

@@ -77,7 +77,6 @@ class ClassicalTestCase(CalculatorTestCase):
 
     def test_case_07_bis(self):
         # check disagg_by_source with sampling
-        raise unittest.SkipTest('Not working yet')
         self.run_calc(case_07.__file__, 'sampling.ini')
         fnames = export(('hcurves', 'csv'), self.calc.datastore)
         for fname in fnames:
