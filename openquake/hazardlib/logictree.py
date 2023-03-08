@@ -444,7 +444,12 @@ class SourceModelLogicTree(object):
             if ats and source_id not in ats:
                 bset.collapse()
                 del dic['applyToSources']
-        new.num_paths = count_paths(self.root_branchset.branches)
+        new.num_paths = count_paths(new.root_branchset.branches)
+        new.smr_to_smr = {}
+        path2smr = {rlz.lt_path: rlz.ordinal for rlz in new}
+        for sm_rlz in self:
+            new.smr_to_smr[sm_rlz.ordinal] = path2smr[sm_rlz.lt_path]
+        import pdb; pdb.set_trace()
         return new
 
     def parse_tree(self, tree_node):
