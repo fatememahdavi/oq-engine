@@ -40,7 +40,7 @@ from openquake.baselib import hdf5, node
 from openquake.baselib.python3compat import decode
 from openquake.baselib.node import node_from_elem, context, Node
 from openquake.baselib.general import groupby, group_array, AccumDict
-from openquake.hazardlib import nrml, InvalidFile, pmf
+from openquake.hazardlib import nrml, InvalidFile, pmf, contexts
 from openquake.hazardlib.sourceconverter import SourceGroup
 from openquake.hazardlib.gsim_lt import (
     GsimLogicTree, bsnodes, fix_bytes, keyno, abs_paths, ImtWeight)
@@ -1054,9 +1054,10 @@ class FullLogicTree(object):
         """
         :param src: source object
         """
+        srcid = contexts.basename(src.source_id)
         trti = self.trti[src.tectonic_region_type]
         sd = self.source_model_lt.source_data
-        brids = set(sd[sd['source'] == src.source_id]['branch'])
+        brids = set(sd[sd['source'] == srcid]['branch'])
         tup = tuple(trti * TWO24 + sm_rlz.ordinal
                     for sm_rlz in self.sm_rlzs
                     if set(sm_rlz.lt_path) & brids)
