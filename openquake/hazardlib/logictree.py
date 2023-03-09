@@ -40,7 +40,7 @@ from openquake.baselib import hdf5, node
 from openquake.baselib.python3compat import decode
 from openquake.baselib.node import node_from_elem, context, Node
 from openquake.baselib.general import groupby, group_array, AccumDict
-from openquake.hazardlib import nrml, InvalidFile, pmf, contexts
+from openquake.hazardlib import nrml, InvalidFile, pmf
 from openquake.hazardlib.sourceconverter import SourceGroup
 from openquake.hazardlib.gsim_lt import (
     GsimLogicTree, bsnodes, fix_bytes, keyno, abs_paths, ImtWeight)
@@ -1050,19 +1050,27 @@ class FullLogicTree(object):
             return int(smr)
         return self.trti[trt] * TWO24 + int(smr)
 
-    def set_trt_smr(self, src):
+    def set_trt_smr(self, srcs, source_id=None):
         """
-        :param src: source object
+        :param srcs: source objects
+        :param source_id: base source ID
+        :returns: list of sources with the same base source ID
         """
-        srcid = contexts.basename(src.source_id)
-        trti = self.trti[src.tectonic_region_type]
-        sd = self.source_model_lt.source_data
-        brids = set(sd[sd['source'] == srcid]['branch'])
-        tup = tuple(trti * TWO24 + sm_rlz.ordinal
-                    for sm_rlz in self.sm_rlzs
-                    if set(sm_rlz.lt_path) & brids)
-        print('Setting %s on %s' % (tup, src))
-        src.trt_smr = tup
+        out = []
+        for src in srcs:
+            srcid = re.split('[:;.]', src.source_id)[0]
+            if source_id and srcid != source_id:
+                continue  # filter
+            trti = self.trti[src.tectonic_region_type]
+            sd = self.source_model_lt.source_data
+            brids = set(sd[sd['source'] == srcid]['branch'])
+            tup = tuple(trti * TWO24 + sm_rlz.ordinal
+                        for sm_rlz in self.sm_rlzs
+                        if set(sm_rlz.lt_path) & brids)
+            # print('Setting %s on %s' % (tup, src))
+            src.trt_smr = tup  # realizations impacted by the source
+            out.append(src)
+        return out
 
     def get_trt_smrs(self, smr):
         """
@@ -1079,11 +1087,7 @@ class FullLogicTree(object):
         groups = []
         source_id = source_id or self.source_model_lt.source_id
         for sg in src_groups:
-            ok = []
-            for src in sg:
-                if re.split('[:;.]', src.source_id)[0] == source_id:
-                    self.set_trt_smr(src)
-                    ok.append(src)
+            ok = self.set_trt_smr(sg, source_id)
             if ok:
                 grp = copy.copy(sg)
                 grp.sources = ok

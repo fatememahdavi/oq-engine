@@ -652,22 +652,31 @@ def by_source(groups, sitecol, reduced_lt, edges_shapedic, oq, monitor):
     assert len(sitecol) == 1, sitecol
     edges, s = edges_shapedic
     weight = reduced_lt.rlzs['weight']
-    L1 = oq.imtls.size // len(oq.imtls)
+    L = oq.imtls.size
+    L1 = L // len(oq.imtls)
     rates2D = numpy.zeros((s['M'], L1))
     rates5D = numpy.zeros((s['mag'], s['dist'], s['eps'], s['M'], s['P']))
     source_id = reduced_lt.source_model_lt.source_id
     cmakers = get_cmakers(groups, reduced_lt, oq)
+    R = reduced_lt.get_num_paths()
+    ratesLR = numpy.zeros((L, R))
+    disaggs = []
     for c, cmaker in enumerate(cmakers):
-        try:
-            dis = Disaggregator(groups[c], sitecol, cmaker, edges)
-        except FarAwayRupture:
-            continue  # source corresponding to a noncontributing realization
-        ws = [weight[rlzs].sum() for rlzs in cmaker.gsims.values()]
-        pmap = dis.cmaker.get_pmap([dis.fullctx])
-        for m, imt in enumerate(oq.imtls):
-            poes = pmap.array[0, oq.imtls(imt)]  # shape NLG -> (L1, G)
-            rates2D[m] += to_rates(poes) @ ws
-        if hasattr(dis.cmaker, 'poes'):
-            iml3 = pmap.interp4D(dis.cmaker.imtls, dis.cmaker.poes)[0]  # MPZ
-            rates5D += dis.disagg_mag_dist_eps(iml3) @ ws
+        dis = Disaggregator(groups[c], sitecol, cmaker, edges)
+        disaggs.append(dis)
+        pmap = cmaker.get_pmap([dis.fullctx])
+        for g, rlzs in enumerate(cmaker.gsims.values()):
+            for r in rlzs:
+                ratesLR[:, r] += to_rates(1-pmap.array[0, :, g]) * weight[r]
+
+    rates1D = to_rates(numpy.array(oq.poes))
+    iml3 = numpy.zeros((s['M'], s['P'], R))
+    for m, imt in enumerate(oq.imtls):
+        slc = oq.imtls(imt)
+        imls = oq.imtls[imt]
+        rates2D[m] += ratesLR[slc] @ weight
+        for r in range(R):
+            iml3[m, :, r] = numpy.interp(rates1D, ratesLR[slc, r], imls)
+    for dis in disaggs:
+        rates5D += dis.disagg_mag_dist_eps(iml3) @ weight
     return {source_id: (rates5D, rates2D)}
