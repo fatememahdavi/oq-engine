@@ -425,10 +425,10 @@ class SourceModelLogicTree(object):
         :returns: a new logic tree reduced to a single source
         """
         new = copy.deepcopy(self)
-        sdata = self.get_source_data()
+        sd = self.source_data
         new.source_id = source_id
-        new.source_data = sdata[sdata['source'] == source_id]
-        oksms = new.source_data['branch']
+        new.source_data = sd[sd['source'] == source_id]
+        okbranches = set(new.source_data['branch'])
         okpaths = group_array(new.source_data, 'fname')
         new.tectonic_region_types = set(new.source_data['trt'])
         for bset, dic in zip(new.branchsets, new.bsetdict.values()):
@@ -436,21 +436,21 @@ class SourceModelLogicTree(object):
                 same = []  # branches with the source, all same contribution
                 zero = []  # branches without the source, all zeros
                 for br in bset.branches:
-                    if br.branch_id in oksms:
+                    if br.branch_id in okbranches:
+                        br.value =  ' '.join(p for p in br.value.split()
+                                             if p in okpaths)
                         same.append(br)
                     else:
+                        br.value = ''
                         zero.append(br)
                 newbranches = []
                 if same:
                     b1 = same[0]
-                    b1.value =  ' '.join(p for p in b1.value.split()
-                                         if p in okpaths)
                     for br in same[1:]:
                         b1.weight += br.weight
                     newbranches.append(b1)
                 if zero:
                     b0 = zero[0]
-                    b0.value = ''
                     for br in zero[1:]:
                         b0.weight += br.weight
                     newbranches.append(b0)
@@ -460,11 +460,6 @@ class SourceModelLogicTree(object):
                 bset.collapse()
                 del dic['applyToSources']
         new.num_paths = count_paths(new.root_branchset.branches)
-        new.smr_to_smr = {}
-        path2smr = {rlz.lt_path: rlz.ordinal for rlz in new}
-        for sm_rlz in self:
-            new.smr_to_smr[sm_rlz.ordinal] = path2smr[sm_rlz.lt_path]
-        import pdb; pdb.set_trace()
         return new
 
     def parse_tree(self, tree_node):
