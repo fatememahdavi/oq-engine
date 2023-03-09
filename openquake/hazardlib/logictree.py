@@ -36,10 +36,10 @@ import itertools
 import collections
 import operator
 import numpy
-from openquake.baselib import hdf5
+from openquake.baselib import hdf5, node
 from openquake.baselib.python3compat import decode
 from openquake.baselib.node import node_from_elem, context, Node
-from openquake.baselib.general import groupby, AccumDict
+from openquake.baselib.general import groupby, group_array, AccumDict
 from openquake.hazardlib import nrml, InvalidFile, pmf
 from openquake.hazardlib.sourceconverter import SourceGroup
 from openquake.hazardlib.gsim_lt import (
@@ -48,6 +48,7 @@ from openquake.hazardlib.lt import (
     Branch, BranchSet, count_paths, Realization, CompositeLogicTree,
     dummy_branchset, LogicTreeError, parse_uncertainty, random)
 
+U8 = numpy.uint8
 U16 = numpy.uint16
 U32 = numpy.uint32
 I32 = numpy.int32
@@ -57,8 +58,16 @@ TWO24 = 2 ** 24
 rlz_dt = numpy.dtype([
     ('ordinal', U32),
     ('branch_path', hdf5.vstr),
-    ('weight', F32)
+    ('weight', F32),
 ])
+
+source_dt = numpy.dtype([
+    ('branch', hdf5.vstr),
+    ('trt', hdf5.vstr),
+    ('fname', hdf5.vstr),  # useful to reduce the XML files
+    ('source', hdf5.vstr),
+])
+
 
 source_model_dt = numpy.dtype([
     ('name', hdf5.vstr),
@@ -73,10 +82,16 @@ src_group_dt = numpy.dtype(
      ('trti', U16),
      ('effrup', I32),
      ('totrup', I32),
-     ('sm_id', U32)])
+     ('sm_id', U32),
+])
 
-branch_dt = [('branchset', hdf5.vstr), ('branch', hdf5.vstr),
-             ('utype', hdf5.vstr), ('uvalue', hdf5.vstr), ('weight', float)]
+branch_dt = numpy.dtype([
+    ('branchset', hdf5.vstr),
+    ('branch', hdf5.vstr),
+    ('utype', hdf5.vstr),
+    ('uvalue', hdf5.vstr),
+    ('weight', float),
+])
 
 TRT_REGEX = re.compile(r'tectonicRegion="([^"]+?)"')
 ID_REGEX = re.compile(r'Source\s+id="([^"]+?)"')
@@ -86,14 +101,17 @@ def get_trt_by_src(source_model_file):
     """
     :returns: a dictionary source ID -> tectonic region type of the source
     """
-    xml = source_model_file.read().replace("'", '"')  # fix single quotes
-    pieces = TRT_REGEX.split(xml)
-    nrml05 = re.search('<sourceGroup', pieces[0])
-    start = 2 if nrml05 else 0  # trt before (start=2) or after src_id (start=0)
+    xml = source_model_file.read()
     trt_by_src = {}
-    for text, trt in zip(pieces[start::2], pieces[1::2]):
-        for src_id in ID_REGEX.findall(text):
-            trt_by_src[src_id] = trt
+    if "http://openquake.org/xmlns/nrml/0.5" in xml:
+        # fast lane using regex, tectonicRegion is always before Source id
+        pieces = TRT_REGEX.split(xml.replace("'", '"'))  # fix single quotes
+        for text, trt in zip(pieces[2::2], pieces[1::2]):
+            for src_id in ID_REGEX.findall(text):
+                trt_by_src[src_id] = trt
+    else:  # parse the XML with ElementTree
+        for src in node.fromstring(xml)[0]:
+            trt_by_src[src.attrib['id']] = src.attrib['tectonicRegion']
     return trt_by_src
 
 
@@ -337,8 +355,7 @@ class SourceModelLogicTree(object):
                           branch_dt)
         dic = dict(filename='fake.xml', seed=0, num_samples=0,
                    sampling_method='early_weights', num_paths=1,
-                   brs_by_src=AccumDict(accum=[]), trt_by_src={},
-                   srcs_by_path=AccumDict(accum=[]), is_source_specific=0,
+                   is_source_specific=0, source_data=[],
                    tectonic_region_types=set(),
                    bsetdict='{"bs0": {"uncertaintyType": "sourceModel"}}')
         self.__fromh5__(arr, dic)
@@ -408,14 +425,12 @@ class SourceModelLogicTree(object):
         :returns: a new logic tree reduced to a single source
         """
         new = copy.deepcopy(self)
+        sdata = self.get_source_data()
         new.source_id = source_id
-        oksms = new.brs_by_src[source_id]
-        new.brs_by_src = {source_id: oksms}
-        new.trt_by_src = {source_id: new.trt_by_src[source_id]}
-        new.srcs_by_path = {  # relative paths
-            path: [source_id] for path, srcs in new.srcs_by_path.items()
-            if source_id in srcs}
-        new.tectonic_region_types = {new.trt_by_src[source_id]}
+        new.source_data = sdata[sdata['source'] == source_id]
+        oksms = new.source_data['branch']
+        okpaths = group_array(new.source_data, 'fname')
+        new.tectonic_region_types = set(new.source_data['trt'])
         for bset, dic in zip(new.branchsets, new.bsetdict.values()):
             if bset.uncertainty_type in ('sourceModel', 'extendModel'):
                 same = []  # branches with the source, all same contribution
@@ -429,7 +444,7 @@ class SourceModelLogicTree(object):
                 if same:
                     b1 = same[0]
                     b1.value =  ' '.join(p for p in b1.value.split()
-                                         if p in self.srcs_by_path)
+                                         if p in okpaths)
                     for br in same[1:]:
                         b1.weight += br.weight
                     newbranches.append(b1)
@@ -457,21 +472,18 @@ class SourceModelLogicTree(object):
         Parse the whole tree and point ``root_branchset`` attribute
         to the tree's root.
         """
-        self.info = collect_info(self.filename, self.branchID)
-
-        # the following dicts are populated in collect_source_model_data
-        self.srcs_by_path = collections.defaultdict(list)
-        self.brs_by_src = collections.defaultdict(list)
-        self.trt_by_src = {}
-
         t0 = time.time()
+        self.info = collect_info(self.filename, self.branchID)
+        # the list is populated in collect_source_model_data
+        self.source_data = []
         for depth, blnode in enumerate(tree_node.nodes):
             [bsnode] = bsnodes(self.filename, blnode)
             self.parse_branchset(bsnode, depth)
+        self.source_data = numpy.array(self.source_data, source_dt)
+        unique = numpy.unique(self.source_data['fname'])
         dt = time.time() - t0
-        bname = os.path.basename(self.filename)
-        logging.info('Validated %s (with %d files) in %.2f seconds', bname,
-                     len(self.srcs_by_path), dt)
+        logging.info('Validated source model logic tree with %d underlying '
+                     'files in %.2f seconds', len(unique), dt)
 
     def parse_branchset(self, branchset_node, depth):
         """
@@ -692,7 +704,9 @@ class SourceModelLogicTree(object):
 
         if 'applyToSources' in f:
             for source_id in f['applyToSources'].split():
-                branchIDs = self.brs_by_src[source_id]
+                branchIDs = {
+                    brid for (brid, trt, fname, srcid) in self.source_data
+                    if srcid == source_id}
                 if not branchIDs:
                     raise LogicTreeError(
                         branchset_node, self.filename,
@@ -778,9 +792,7 @@ class SourceModelLogicTree(object):
         else:
             path = sm.name
         for src_id, trt in trt_by_src.items():
-            self.srcs_by_path[path].append(src_id)
-            self.brs_by_src[src_id].append(branch_id)
-            self.trt_by_src[src_id] = trt
+            self.source_data.append((branch_id, trt, path, src_id))
             self.tectonic_region_types.add(trt)
 
     def bset_values(self, lt_path):
@@ -1177,6 +1189,7 @@ class FullLogicTree(object):
         return (dict(
             source_model_lt=self.source_model_lt,
             gsim_lt=self.gsim_lt,
+            source_data=self.source_model_lt.source_data,
             sm_data=numpy.array(sm_data, source_model_dt)),
                 dict(seed=self.seed, num_samples=self.num_samples,
                      trts=hdf5.array_of_vstr(self.gsim_lt.values),
