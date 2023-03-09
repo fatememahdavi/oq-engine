@@ -1055,10 +1055,11 @@ class FullLogicTree(object):
         :param src: source object
         """
         trti = self.trti[src.tectonic_region_type]
-        branch_ids = set(self.source_model_lt.brs_by_src[src.source_id])
+        sd = self.source_model_lt.source_data
+        brids = set(sd[sd['source'] == src.source_id]['branch'])
         tup = tuple(trti * TWO24 + sm_rlz.ordinal
                     for sm_rlz in self.sm_rlzs
-                    if set(sm_rlz.lt_path) & branch_ids)
+                    if set(sm_rlz.lt_path) & brids)
         print('Setting %s on %s' % (tup, src))
         src.trt_smr = tup
 
