@@ -60,7 +60,10 @@ def gzpik(obj):
 
 def fragmentno(src):
     "Postfix after :.; as an integer"
-    fragment = re.split('[:.;]', src.source_id, 1)[1]
+    try:
+        fragment = re.split('[:.;]', src.source_id, 1)[1]
+    except IndexError:  # no fragment
+        return 0
     return int(fragment.replace('.', '').replace(';', ''))
 
 
@@ -141,7 +144,6 @@ def read_source_model(fname, converter, monitor):
     return {fname: sm}
 
 
-# NB: called after the .checksum has been stored in reduce_sources
 def _fix_dupl_ids(src_groups):
     sources = general.AccumDict(accum=[])
     for sg in src_groups:
@@ -149,9 +151,16 @@ def _fix_dupl_ids(src_groups):
             sources[src.source_id].append(src)
     for src_id, srcs in sources.items():
         if len(srcs) > 1:
-            # duplicate IDs with different checksums, see cases 11, 13, 20
-            for i, src in enumerate(srcs):
-                src.source_id = '%s;%d' % (src.source_id, i)
+            add_checksums(srcs)
+            gb = general.groupby(srcs, operator.attrgetter('checksum'))
+            if len(gb) == 1:  # all sources have the same checksum, do nothing
+                continue
+            for i, srclist in enumerate(gb.values()):
+                # all sources in srclist have same checksum and same ID
+                # NB: the event based seed depend on the source ID!
+                # see the method .serial
+                for src in srclist:
+                    src.source_id = '%s;%d' % (src_id, i)
 
 
 def get_csm(oq, full_lt, h5=None):
@@ -372,8 +381,8 @@ def _get_csm(full_lt, groups):
     for trt in acc:
         lst = []
         for srcs in general.groupby(acc[trt], key).values():
-            if len(srcs) > 1:
-                srcs = reduce_sources(srcs)
+            #if len(srcs) > 1:
+            #    srcs = reduce_sources(srcs)
             lst.extend(srcs)
         for sources in general.groupby(lst, trt_smrs).values():
             # set ._wkt attribute (for later storage in the source_wkt dataset)

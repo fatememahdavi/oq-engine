@@ -71,7 +71,7 @@ class LogicTreeTestCase(CalculatorTestCase):
 
         # check the weights of the sources
         info = self.calc.datastore.read_df('source_info', 'source_id')
-        self.assertEqual(info.loc[b'1'].weight, 184)
+        self.assertEqual(info.loc[b'1'].weight, 276)
         self.assertEqual(info.loc[b'2'].weight, 118)
         self.assertEqual(info.loc[b'3'].weight, 3914)
 
@@ -233,9 +233,7 @@ hazard_uhs-std.csv
             case_20.__file__, delta=1E-7)
         # there are 3 sources x 12 sm_rlzs
         sgs = self.calc.csm.src_groups  # 7 source groups with 1 source each
-        self.assertEqual(len(sgs), 7)
-        dupl = sum(len(sg.sources[0].trt_smrs) - 1 for sg in sgs)
-        self.assertEqual(dupl, 29)  # there are 29 duplicated sources
+        self.assertEqual(len(sgs), 12)
 
         # another way to look at the duplicated sources; protects against
         # future refactorings breaking the pandas readability of source_info
@@ -243,7 +241,7 @@ hazard_uhs-std.csv
         numpy.testing.assert_equal(
             decode(list(df.index)),
             ['CHAR1;0', 'CHAR1;1', 'CHAR1;2', 'COMFLT1;0', 'COMFLT1;1',
-             'SFLT1;0', 'SFLT1;1'])
+             'SFLT1;0', 'SFLT1;1'])            
 
         # check pandas readability of hcurves-rlzs and hcurves-stats
         df = self.calc.datastore.read_df('hcurves-rlzs', 'lvl')
@@ -271,7 +269,7 @@ hazard_uhs-std.csv
         self.assertEqual(aw.imt, 'PGA')
         self.assertEqual(aw.poe, .001)
         # the numbers are quite different on macOS, 6.461143e-05 :-(
-        aac(aw.array['poe'], [6.467104e-05, 0, 0], atol=1E-7)
+        aac(aw.array['poe'], [1.430511e-05, 0, 0], atol=1E-7)
 
         # testing view_relevant_sources
         arr = view('relevant_sources:SA(1.0)', self.calc.datastore)
@@ -318,7 +316,7 @@ hazard_uhs-std.csv
         # checking that source_info is stored correctly
         info = self.calc.datastore['source_info'][:]
         ae(info['source_id'], [b'21;0', b'21;1', b'22'])
-        ae(info['grp_id'], [0, 1, 2])
+        ae(info['grp_id'], [1, 0, 4])
         ae(info['weight'] > 0, [True, True, True])
         ae(info['trti'], [0, 0, 1])
 
