@@ -1078,28 +1078,6 @@ class FullLogicTree(object):
             out.append(src)
         return out
 
-    def set_trt_smr(self, srcs, source_id=None):
-        """
-        :param srcs: source objects
-        :param source_id: base source ID
-        :returns: list of sources with the same base source ID
-        """
-        out = []
-        for src in srcs:
-            srcid = re.split('[:;.]', src.source_id)[0]
-            if source_id and srcid != source_id:
-                continue  # filter
-            trti = self.trti[src.tectonic_region_type]
-            sd = self.source_model_lt.source_data
-            brids = set(sd[sd['source'] == srcid]['branch'])
-            tup = tuple(trti * TWO24 + sm_rlz.ordinal
-                        for sm_rlz in self.sm_rlzs
-                        if set(sm_rlz.lt_path) & brids)
-            # print('Setting %s on %s' % (tup, src))
-            src.trt_smr = tup  # realizations impacted by the source
-            out.append(src)
-        return out
-
     def get_trt_smrs(self, smr):
         """
         :param smr: effective realization index
