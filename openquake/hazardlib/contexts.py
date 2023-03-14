@@ -1665,8 +1665,7 @@ def read_cmakers(dstore, full_lt=None):
         oq.af = None
     trt_smrs = dstore['trt_smrs'][:]
     if full_lt is None:
-        full_lt = dstore['full_lt']
-        full_lt.init()
+        full_lt = dstore['full_lt'].init()
     cmakers = get_cmakers(trt_smrs, full_lt, oq)
     if 'delta_rates' in dstore:  # aftershock
         for cmaker in cmakers:

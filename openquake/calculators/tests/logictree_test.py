@@ -21,16 +21,16 @@ import unittest
 import numpy
 from openquake.baselib import general, config
 from openquake.baselib.python3compat import decode
-from openquake.hazardlib import contexts
+from openquake.hazardlib import contexts, calc
 from openquake.calculators.views import view, text_table
 from openquake.calculators.export import export
 from openquake.calculators.extract import extract
 from openquake.calculators.tests import (
     CalculatorTestCase, strip_calc_id, NOT_DARWIN)
 from openquake.qa_tests_data.logictree import (
-    case_01, case_02, case_06, case_07, case_08, case_09, case_10, case_11,
-    case_13, case_14, case_15, case_16, case_17, case_20, case_21, case_28,
-    case_30, case_31, case_36, case_39, case_45, case_46,
+    case_01, case_02, case_03, case_06, case_07, case_08, case_09, case_10,
+    case_11, case_13, case_14, case_15, case_16, case_17, case_20, case_21,
+    case_28, case_30, case_31, case_36, case_39, case_45, case_46,
     case_52, case_56, case_58, case_59, case_67, case_68, case_71, case_73,
     case_79, case_83)
 
@@ -66,6 +66,25 @@ class LogicTreeTestCase(CalculatorTestCase):
 
         [fname] = export(('hcurves', 'csv'), self.calc.datastore)
         self.assertEqualFiles('expected/hcurve.csv', fname)
+
+    def test_case_03(self):
+        calcs = []
+        # 81*4 realizations with 2 sources reduced to 9*2 realizations with 1 source
+        self.run_calc(case_03.__file__, 'job.ini')
+        self.assertEqual(self.calc.full_lt.get_num_paths(), 18)
+        calcs.append(self.calc)
+        # 10 realizations with 1 source
+        self.run_calc(case_03.__file__, 'job_sampling.ini')
+        self.assertEqual(self.calc.full_lt.get_num_paths(), 10)
+        calcs.append(self.calc)
+        for c in calcs:
+            groups = c.csm.src_groups
+            es = calc.disagg.get_edges_shapedic(c.oqparam, c.sitecol)
+            rates5D, rates2D = calc.disagg.by_source(
+                groups, c.sitecol, c.full_lt, es, c.oqparam)
+            # rates5D has shape (Ma, D, E, M, P), rates2D shape (M, L1)
+            print(rates5D.sum(axis=(1, 2)))
+            print(rates2D)
 
     def test_case_06(self):
         # two source model, use_rates and disagg_by_src

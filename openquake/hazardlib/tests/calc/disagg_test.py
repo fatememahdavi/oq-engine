@@ -16,12 +16,11 @@
 import unittest
 import os.path
 import numpy
-import pytest
 
 from openquake.baselib.general import pprod
 from openquake.hazardlib.nrml import to_python
 from openquake.hazardlib.calc import disagg, filters
-from openquake.hazardlib import nrml, read_input, valid
+from openquake.hazardlib import nrml, valid
 from openquake.hazardlib.sourceconverter import SourceConverter
 from openquake.hazardlib.gsim.campbell_2003 import Campbell2003
 from openquake.hazardlib.geo import Point
@@ -266,16 +265,3 @@ class PMFExtractorsTestCase(unittest.TestCase):
             (pmf1 + pmf2) / 2, [1, 1])
         numpy.testing.assert_allclose(
             valid.mag_pmf(mean), [0.99999944, 0.99999999])
-
-
-@pytest.mark.parametrize('job_ini', ['job_sampling.ini', 'job.ini'])
-def test_single_source(job_ini):
-    job_ini = os.path.join(DATA_PATH, 'data', 'disagg', job_ini)
-    inp = read_input(job_ini)
-    oq = inp.oq
-    edges_shapedic = disagg.get_edges_shapedic(oq, inp.sitecol)
-    rates5D, rates2D = disagg.by_source(inp.groups, inp.sitecol, inp.full_lt,
-                                        edges_shapedic, oq)
-    # rates5D has shape (Ma, D, E, M, P), rates2D shape (M, L1)
-    print(rates5D.sum(axis=(1, 2)))
-    print(rates2D)
