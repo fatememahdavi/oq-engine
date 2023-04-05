@@ -134,20 +134,19 @@ def store_ctxs(dstore, rupdata_list, grp_id):
 #  ########################### task functions ############################ #
 
 
-def classical(srcs, sitecol, cmaker, monitor):
+def classical(srcs, sites, cmaker, monitor):
     """
     Call the classical calculator in hazardlib
     """
     cmaker.init_monitoring(monitor)
     rup_indep = getattr(srcs, 'rup_interdep', None) != 'mutex'
-    for sites in sitecol.split_in_tiles(cmaker.ntiles):
-        pmap = ProbabilityMap(
-            sites.sids, cmaker.imtls.size, len(cmaker.gsims)).fill(rup_indep)
-        result = hazclassical(srcs, sites, cmaker, pmap)
-        result['pnemap'] = ~pmap.remove_zeros()
-        result['pnemap'].gidx = cmaker.gidx
-        result['pnemap'].trt_smrs = cmaker.trt_smrs
-        yield result
+    pmap = ProbabilityMap(
+        sites.sids, cmaker.imtls.size, len(cmaker.gsims)).fill(rup_indep)
+    result = hazclassical(srcs, sites, cmaker, pmap)
+    result['pnemap'] = ~pmap.remove_zeros()
+    result['pnemap'].gidx = cmaker.gidx
+    result['pnemap'].trt_smrs = cmaker.trt_smrs
+    return result
 
 
 def postclassical(pgetter, N, hstats, individual_rlzs,
@@ -558,7 +557,8 @@ class ClassicalCalculator(base.HazardCalculator):
                               len(block), sg.weight)
                 for g in cm.gidx:
                     self.n_outs[g] += cm.ntiles
-                allargs.append((block, sitecol, cm))
+                for sites in sitecol.split_in_tiles(cm.ntiles):
+                    allargs.append((block, sites, cm))
 
             # allocate memory
             for g in cm.gidx:
@@ -570,10 +570,7 @@ class ClassicalCalculator(base.HazardCalculator):
             logging.info('Global pmap size %s', humansize(totsize))
 
         self.datastore.swmr_on()  # must come before the Starmap
-        smap = parallel.Starmap(classical, h5=self.datastore.hdf5)
-        # using submit avoids the .task_queue and thus core starvation
-        for args in allargs:
-            smap.submit(args)
+        smap = parallel.Starmap(classical, allargs, h5=self.datastore)
         return smap.reduce(self.agg_dicts, acc)
 
     def store_info(self):
