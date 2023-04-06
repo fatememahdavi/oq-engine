@@ -1048,6 +1048,7 @@ class FullLogicTree(object):
         assert self.Re <= TWO24, len(self.sm_rlzs)
         self.trti = {trt: i for i, trt in enumerate(self.gsim_lt.values)}
         self.trts = list(self.gsim_lt.values)
+        self.smbs = numpy.unique(self.source_model_lt.source_data['branch'])
         self.gdict = {}
         g = 0
         rlzs_by_g = []
@@ -1075,12 +1076,6 @@ class FullLogicTree(object):
             sum(len(rlzs) for rlzs in rlzs_by_g), RT)
 
         return self
-
-    def get_smbs(self):
-        """
-        :returns: the underlying source model branches as an array of strings
-        """
-        return numpy.unique(self.source_model_lt.source_data['branch'])
 
     def get_gidx(self, trt_smrs):
         """
