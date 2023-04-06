@@ -30,6 +30,7 @@ from openquake.baselib import parallel, general, hdf5, python3compat
 from openquake.hazardlib import nrml, sourceconverter, InvalidFile
 from openquake.hazardlib.contexts import basename
 from openquake.hazardlib.lt import apply_uncertainties
+from openquake.hazardlib.gsim_lt import abs_paths
 from openquake.hazardlib.geo.surface.kite_fault import kite_to_geom
 
 TWO16 = 2 ** 16  # 65,536
@@ -188,6 +189,11 @@ def get_csm(oq, full_lt, dstore=None):
         allargs.append((fname, converter))
     smdict = parallel.Starmap(read_source_model, allargs, distribute=dist,
                               h5=dstore if dstore else None).reduce()
+    sd = full_lt.source_model_lt.source_data
+    fname = full_lt.source_model_lt.filename
+    smb = dict(zip(abs_paths(fname, sd['fname']), sd['branch']))
+    for fullpath, sm in smdict.items():
+        sm.smb = smb[fullpath]
     parallel.Starmap.shutdown()  # save memory
     fix_geometry_sections(smdict, dstore)
 
@@ -213,7 +219,7 @@ def add_checksums(srcs):
     """
     for src in srcs:
         dic = {k: v for k, v in vars(src).items()
-               if k not in 'source_id trt_smr smweight samples'}
+               if k not in 'source_id trt_smr smb smweight samples'}
         src.checksum = zlib.adler32(pickle.dumps(dic, protocol=4))
 
 
@@ -227,6 +233,7 @@ def find_false_duplicates(smdict):
     for smodel in smdict.values():
         for sgroup in smodel.src_groups:
             for src in sgroup:
+                src.smb = smodel.smb
                 acc[src.source_id].append(src)
                 if sgroup.atomic:
                     atomic.add(src.source_id)
@@ -363,17 +370,16 @@ def reduce_sources(sources_with_same_id, full_lt):
     :returns: a list of truly unique sources, ordered by trt_smr
     """
     out = []
-    srcid = sources_with_same_id[0].source_id
     add_checksums(sources_with_same_id)
     for srcs in general.groupby(sources_with_same_id, checksum).values():
         # duplicate sources: same id, same checksum
         src = srcs[0]
         if len(srcs) > 1:  # happens in logictree/case_07
             src.trt_smr = tuple(s.trt_smr for s in srcs)
+            src.smb = tuple(s.smb for s in srcs)
         else:
             src.trt_smr = src.trt_smr,
-        # tup = full_lt.get_trt_smrs(srcid)
-        # assert src.trt_smr == tup, (src.trt_smr, tup)
+            src.smb = src.smb,
         out.append(src)
     out.sort(key=operator.attrgetter('trt_smr'))
     return out
