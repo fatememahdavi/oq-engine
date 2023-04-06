@@ -1051,9 +1051,9 @@ class FullLogicTree(object):
         self.gdict = {}
         g = 0
         rlzs_by_g = []
-        for smr in range(self.Re):
+        for sm_rlz in range(self.sm_rlzs):
             for trti, trt in enumerate(self.trts):
-                trt_smr = trti * TWO24 + smr
+                trt_smr = trti * TWO24 + sm_rlz.ordinal
                 rgb = self.get_rlzs_by_gsim(trt_smr)
                 self.gdict[trt_smr] = numpy.arange(g, g + len(rgb)) 
                 for rlzs in rgb.values():
@@ -1075,6 +1075,12 @@ class FullLogicTree(object):
             sum(len(rlzs) for rlzs in rlzs_by_g), RT)
 
         return self
+
+    def get_smbs(self):
+        """
+        :returns: the underlying source model branches as an array of strings
+        """
+        return numpy.unique(self.source_model_lt.source_data['branch'])
 
     def get_gidx(self, trt_smrs):
         """
