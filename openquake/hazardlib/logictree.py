@@ -75,15 +75,6 @@ source_model_dt = numpy.dtype([
     ('samples', U32),
 ])
 
-src_group_dt = numpy.dtype(
-    [('trt_smr', U32),
-     ('name', hdf5.vstr),
-     ('trti', U16),
-     ('effrup', I32),
-     ('totrup', I32),
-     ('sm_id', U32),
-])
-
 branch_dt = numpy.dtype([
     ('branchset', hdf5.vstr),
     ('branch', hdf5.vstr),
