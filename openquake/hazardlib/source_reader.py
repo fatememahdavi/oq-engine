@@ -191,9 +191,9 @@ def get_csm(oq, full_lt, dstore=None):
                               h5=dstore if dstore else None).reduce()
     sd = full_lt.source_model_lt.source_data
     fname = full_lt.source_model_lt.filename
-    smb = dict(zip(abs_paths(fname, sd['fname']), sd['branch']))
-    for fullpath, sm in smdict.items():
-        sm.smb = smb[fullpath]
+    smbdict = dict(zip(abs_paths(fname, sd['fname']), sd['branch']))
+    for fullpath, smb in smbdict.items():
+        smdict[fullpath].smb = smb
     parallel.Starmap.shutdown()  # save memory
     fix_geometry_sections(smdict, dstore)
 
