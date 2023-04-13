@@ -36,6 +36,7 @@ TWO16 = 2 ** 16  # 65,536
 TWO24 = 2 ** 24  # 16,777,216
 TWO32 = 2 ** 32  # 4,294,967,296
 by_id = operator.attrgetter('source_id')
+decode = python3compat.decode
 
 CALC_TIME, NUM_SITES, NUM_RUPTURES, WEIGHT, MUTEX = 3, 4, 5, 6, 7
 
@@ -191,9 +192,8 @@ def get_csm(oq, full_lt, dstore=None):
     sd = full_lt.source_model_lt.source_data
     dirname = os.path.dirname(full_lt.source_model_lt.filename)
     for fname, arr in general.group_array(sd, 'fname').items():
-        fullpath = os.path.join(dirname, fname)
-        if fullpath in smdict:
-            smdict[fullpath].smbs = tuple(arr['branch'])
+        fullpath = os.path.abspath(os.path.join(dirname, decode(fname)))
+        smdict[fullpath].smbs = tuple(decode(numpy.unique(arr['branch'])))
     parallel.Starmap.shutdown()  # save memory
     fix_geometry_sections(smdict, dstore)
 
@@ -252,7 +252,7 @@ def find_false_duplicates(smdict):
                 for i, same_checksum in enumerate(gb.values()):
                     # sources with the same checksum get the same ID
                     for src in same_checksum:
-                        src.source_id += '!%d' % i
+                        src.source_id += '!%d' % i                    
                 found.append(srcid)
     return found
 
@@ -376,6 +376,10 @@ def reduce_sources(sources_with_same_id, full_lt):
         src = srcs[0]
         if len(srcs) > 1:  # happens in logictree/case_07
             src.trt_smr = tuple(s.trt_smr for s in srcs)
+            smbs = set()
+            for s in srcs:
+                smbs.update(s.smbs)
+            src.smbs = tuple(sorted(smbs))
         else:
             src.trt_smr = src.trt_smr,
         out.append(src)
