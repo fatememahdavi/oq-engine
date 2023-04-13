@@ -190,10 +190,11 @@ def get_csm(oq, full_lt, dstore=None):
     smdict = parallel.Starmap(read_source_model, allargs, distribute=dist,
                               h5=dstore if dstore else None).reduce()
     sd = full_lt.source_model_lt.source_data
-    fname = full_lt.source_model_lt.filename
-    smbdict = dict(zip(abs_paths(fname, sd['fname']), sd['branch']))
-    for fullpath, smb in smbdict.items():
-        smdict[fullpath].smb = smb
+    dirname = os.path.dirname(full_lt.source_model_lt.filename)
+    for fname, arr in general.group_array(sd, 'fname').items():
+        fullpath = os.path.join(dirname, fname)
+        if fullpath in smdict:
+            smdict[fullpath].smbs = tuple(arr['branch'])
     parallel.Starmap.shutdown()  # save memory
     fix_geometry_sections(smdict, dstore)
 
@@ -219,7 +220,7 @@ def add_checksums(srcs):
     """
     for src in srcs:
         dic = {k: v for k, v in vars(src).items()
-               if k not in 'source_id trt_smr smb smweight samples'}
+               if k not in 'source_id trt_smr smbs smweight samples'}
         src.checksum = zlib.adler32(pickle.dumps(dic, protocol=4))
 
 
@@ -233,7 +234,7 @@ def find_false_duplicates(smdict):
     for smodel in smdict.values():
         for sgroup in smodel.src_groups:
             for src in sgroup:
-                src.smb = smodel.smb
+                src.smbs = smodel.smbs
                 acc[src.source_id].append(src)
                 if sgroup.atomic:
                     atomic.add(src.source_id)
@@ -376,10 +377,8 @@ def reduce_sources(sources_with_same_id, full_lt):
         src = srcs[0]
         if len(srcs) > 1:  # happens in logictree/case_07
             src.trt_smr = tuple(s.trt_smr for s in srcs)
-            src.smb = tuple(s.smb for s in srcs)
         else:
             src.trt_smr = src.trt_smr,
-            src.smb = src.smb,
         out.append(src)
     out.sort(key=operator.attrgetter('trt_smr'))
     return out

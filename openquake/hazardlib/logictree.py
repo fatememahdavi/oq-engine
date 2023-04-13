@@ -1052,7 +1052,7 @@ class FullLogicTree(object):
         self.gdict = {}
         g = 0
         rlzs_by_g = []
-        for sm_rlz in range(self.sm_rlzs):
+        for sm_rlz in self.sm_rlzs:
             for trti, trt in enumerate(self.trts):
                 trt_smr = trti * TWO24 + sm_rlz.ordinal
                 rgb = self.get_rlzs_by_gsim(trt_smr)
