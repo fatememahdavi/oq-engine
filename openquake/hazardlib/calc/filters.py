@@ -39,6 +39,15 @@ MAX_DISTANCE = 2000  # km, ultra big distance used if there is no filter
 trt_smr = operator.attrgetter('trt_smr')
 
 
+def get_trunclevel(truncation_level, mag, minmag):
+    """
+    :returns: reduced truncation level at the given magnitude
+    """
+    if minmag > MINMAG:
+        return truncation_level * (MAXMAG-mag) / (MAXMAG-4.0)
+    return truncation_level
+
+
 def magstr(mag):
     """
     :returns: a string representation of the magnitude

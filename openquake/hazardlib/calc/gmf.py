@@ -26,6 +26,7 @@ from openquake.baselib.general import AccumDict
 from openquake.hazardlib.const import StdDev
 from openquake.hazardlib.cross_correlation import NoCrossCorrelation
 from openquake.hazardlib.gsim.base import ContextMaker, FarAwayRupture
+from openquake.hazardlib.calc.filters import get_trunclevel, MINMAG
 from openquake.hazardlib.imt import from_string
 
 U32 = numpy.uint32
@@ -126,8 +127,9 @@ class GmfComputer(object):
         [self.ctx] = ctxs
         if correlation_model:  # store the filtered sitecol
             self.sites = sitecol.complete.filtered(self.ctx.sids)
+        minmag = self.cmaker.maximum_distance.x[0]
         self.cross_correl = cross_correl or NoCrossCorrelation(
-            cmaker.truncation_level)
+            get_trunclevel(cmaker.truncation_level, rupture.mag, minmag))
 
     def compute_all(self, scenario, sig_eps=None, max_iml=None):
         """
