@@ -23,6 +23,7 @@ import tempfile
 import warnings
 import importlib
 import itertools
+from functools import partial
 from urllib.parse import quote_plus, unquote_plus
 import collections
 import json
@@ -854,27 +855,16 @@ def build_dt(dtypedict, names):
     return numpy.dtype(lst)
 
 
-def check_length(field, size):
-    """
-    :param field: a bytes field in the exposure
-    :param size: maximum size of the field
-    :returns: a function checking that the value is below the size
-    """
-    def check(val):
-        if len(val) > size:
-            raise ValueError('%s=%r has length %d > %d' %
-                             (field, val, len(val), size))
-        return val
-    return check
-
-
 def _read_csv(fileobj, compositedt):
+    # avoid circular import
+    from openquake.baselib.performance import check_length
     dic = {}
     conv = {}
     for name in compositedt.names:
         dic[name] = dt = compositedt[name]
         if dt.kind == 'S':  # limit of the length of byte-fields
-            conv[name] = check_length(name, dt.itemsize)
+            conv[name] = partial(check_length, name, dt.itemsize)
+
     df = pandas.read_csv(fileobj, names=compositedt.names, converters=conv,
                          dtype=dic, keep_default_na=False, na_filter=False)
     arr = numpy.zeros(len(df), compositedt)

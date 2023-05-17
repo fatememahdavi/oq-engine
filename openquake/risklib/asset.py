@@ -20,6 +20,7 @@ import itertools
 import logging
 import csv
 import os
+import time
 import numpy
 import pandas
 from shapely import wkt, geometry
@@ -1068,7 +1069,10 @@ class Exposure(object):
             conv[f] = float
             rename[f] = 'occupants_' + field
         for fname in self.datafiles:
+            t0 = time.time()
             array = hdf5.read_csv(fname, conv, rename, errors=errors).array
+            dt = time.time() - t0
+            logging.info('Read %s in %.1f seconds', fname, dt)
             array['lon'] = numpy.round(array['lon'], 5)
             array['lat'] = numpy.round(array['lat'], 5)
             yield from array

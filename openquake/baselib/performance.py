@@ -552,3 +552,17 @@ def kollapse(array, kfields, kround=kround0, mfields=(), afield=''):
     if afield:
         return res, split_array(array[afield], indices, counts)
     return res
+
+
+# used in hdf5._read_csv
+@compile('unicode_type(unicode_type, uint8, unicode_type)')
+def check_length(field, size, val):
+    """
+    :param field: a string field in the exposure
+    :param size: maximum size of the field
+    :param val: value of the string field
+    :returns: the value or raise a ValueError
+    """
+    if len(val) > size:
+        raise ValueError('Field too long')
+    return val
