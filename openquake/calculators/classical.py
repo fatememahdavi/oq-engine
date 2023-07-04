@@ -498,7 +498,7 @@ class ClassicalCalculator(base.HazardCalculator):
         logging.info(f'Allocating %s for the global pmap ({Gt=})',
                      humansize(nbytes))
         self.pmap = ProbabilityMap(sitecol.sids, L, Gt).fill(1)
-        allargs = []
+        args_by_grp = {}
         for cm in self.cmakers:
             G = len(cm.gsims)
             sg = self.csm.src_groups[cm.grp_id]
@@ -517,15 +517,23 @@ class ClassicalCalculator(base.HazardCalculator):
             elif sg.atomic or sg.weight <= maxw:
                 blks = [sg]
             else:
-                blks = block_splitter(sg, maxw, get_weight, sort=True)
-            for block in blks:
-                logging.debug('Sending %d source(s) with weight %d',
-                              len(block), sg.weight)
-                allargs.append((block, sitecol, cm))
+                blks = list(block_splitter(sg, maxw, get_weight, sort=True))
+            args_by_grp[cm.grp_id] = (blks, sitecol, cm)
+        single_args = [(args[0], args[1], args[2])
+                       for args in args_by_grp.values()
+                       if len(args[0]) == 1]
+        multi_args = []
+        for args in args_by_grp.values():
+            if len(args[0]) > 1:
+                for blk in args[0]:
+                    multi_args.append((blk, args[1], args[2])) 
 
         self.datastore.swmr_on()  # must come before the Starmap
-        smap = parallel.Starmap(classical, allargs, h5=self.datastore.hdf5)
+        smap1 = parallel.Starmap(classical, single_args, h5=self.datastore.hdf5)
+        smap1.submit_all()
+        smap = parallel.Starmap(classical, multi_args, h5=self.datastore.hdf5)
         acc = smap.reduce(self.agg_dicts, acc)
+        acc = smap1.reduce(self.agg_dicts, acc)
         with self.monitor('storing PoEs', measuremem=True):
             nbytes = self.haz.store_poes(self.pmap.array, self.pmap.sids)
         logging.info('Stored %s of PoEs', humansize(nbytes))
