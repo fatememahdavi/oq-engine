@@ -510,16 +510,14 @@ class ClassicalCalculator(base.HazardCalculator):
             # NB: disagg_by_src is disabled in case of tiling
             assert not (itiles > 1 and oq.disagg_by_src)
             cm.itiles = itiles
-            if itiles > 1:
-                logging.debug('Producing %d inner tiles', itiles)
 
             if oq.disagg_by_src:  # possible only with a single tile
                 blks = groupby(sg, basename).values()
             elif sg.atomic or sg.weight <= maxw:
                 blks = [sg]
             else:
-                if CLUSTER:
-                    cm.itiles = 1
+                if nbytes > 1E10 and CLUSTER:  # more than 10 GB of pmap
+                    cm.itiles = 10
                     for tile in sitecol.split(numpy.ceil(sg.weight / maxw)):
                         allargs.append((sg, tile, cm))
                 else:
