@@ -24,7 +24,8 @@ import numpy
 import pandas
 
 from openquake.baselib import hdf5, parallel
-from openquake.baselib.general import AccumDict, humansize, group_array
+from openquake.baselib.general import (
+    AccumDict, humansize, group_array, split_in_blocks)
 from openquake.hazardlib.probability_map import ProbabilityMap, get_mean_curve
 from openquake.hazardlib.stats import geom_avg_std, compute_stats
 from openquake.hazardlib.calc.stochastic import sample_ruptures
@@ -103,7 +104,7 @@ def get_computer(cmaker, oqparam, proxy, sids, sitecol,
         oqparam._amplifier, oqparam._sec_perils)
 
             
-def event_based(proxies, sitecol, cmaker, oqparam, dstore, monitor):
+def event_based(proxies, cmaker, oqparam, dstore, monitor):
     """
     Compute GMFs and optionally hazard curves
     """
@@ -116,9 +117,10 @@ def event_based(proxies, sitecol, cmaker, oqparam, dstore, monitor):
     cmon = monitor('computing gmfs', measuremem=False)
     max_iml = oqparam.get_max_iml()
     scenario = 'scenario' in oqparam.calculation_mode
-    srcfilter = SourceFilter(sitecol, oqparam.maximum_distance(cmaker.trt))
     with dstore:
+        sitecol = dstore['sitecol']
         rupgeoms = dstore['rupgeoms']
+        srcfilter = SourceFilter(sitecol, oqparam.maximum_distance(cmaker.trt))
         if "station_data" in oqparam.inputs:
             station_data = dstore.read_df('station_data', 'site_id')
             station_sitecol = sitecol.filtered(station_data.index)
@@ -175,8 +177,8 @@ def event_based_smap(sitecol, full_lt, oq, dstore):
     parent = dstore.parent if dstore.parent else dstore
     rups_by = group_array(parent['ruptures'][:], 'trt_smr')
     counts = numpy.array([len(rups) for rups in rups_by.values()])
-    ntiles = U32(numpy.ceil(counts / counts.sum() * oq.concurrent_tasks))
-    logging.info('Submitting %s tasks', ntiles)
+    chunks = U32(numpy.ceil(counts / counts.sum() * oq.concurrent_tasks))
+    logging.info('Submitting %s tasks', chunks)
     for t, (trt_smr, rups) in enumerate(rups_by.items()):
         rlzs_by_gsim = full_lt.get_rlzs_by_gsim(trt_smr)
         proxies = [RuptureProxy(rup) for rup in rups]
@@ -192,8 +194,8 @@ def event_based_smap(sitecol, full_lt, oq, dstore):
             # expensive, so we want to avoid repeating it num_gmfs times)
             # TODO: this is ugly and must be improved upon!
             proxies = proxies[0:1]
-        for tile in sitecol.split(ntiles[t]):
-            smap.submit((proxies, tile, cmaker, oq, parent))
+        for block in split_in_blocks(proxies, chunks[t]):
+            smap.submit((block, cmaker, oq, parent))
     return smap
 
     
