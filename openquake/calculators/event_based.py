@@ -25,7 +25,7 @@ import pandas
 
 from openquake.baselib import hdf5, parallel
 from openquake.baselib.general import (
-    AccumDict, humansize, group_array, split_in_blocks)
+    AccumDict, humansize, group_array, block_splitter)
 from openquake.hazardlib.probability_map import ProbabilityMap, get_mean_curve
 from openquake.hazardlib.stats import geom_avg_std, compute_stats
 from openquake.hazardlib.calc.stochastic import sample_ruptures
@@ -172,13 +172,16 @@ def event_based(proxies, cmaker, oqparam, dstore, monitor):
                 sig_eps=numpy.array(sig_eps, sig_eps_dt(oqparam.imtls)))
 
 
+def rupweight(rup):
+    return (rup['mag'] / 5.)**10
+
+
 def event_based_smap(sitecol, full_lt, oq, dstore):
     smap = parallel.Starmap(event_based, h5=dstore)
     parent = dstore.parent if dstore.parent else dstore
     rups_by = group_array(parent['ruptures'][:], 'trt_smr')
-    counts = numpy.array([len(rups) for rups in rups_by.values()])
-    chunks = U32(numpy.ceil(counts / counts.sum() * oq.concurrent_tasks))
-    logging.info('Submitting %s tasks', chunks)
+    totw = sum(sum(rupweight(r) for r in rups) for rups in rups_by.values())
+    maxw = totw / (oq.concurrent_tasks or 1)
     for t, (trt_smr, rups) in enumerate(rups_by.items()):
         rlzs_by_gsim = full_lt.get_rlzs_by_gsim(trt_smr)
         proxies = [RuptureProxy(rup) for rup in rups]
@@ -194,7 +197,7 @@ def event_based_smap(sitecol, full_lt, oq, dstore):
             # expensive, so we want to avoid repeating it num_gmfs times)
             # TODO: this is ugly and must be improved upon!
             proxies = proxies[0:1]
-        for block in split_in_blocks(proxies, chunks[t]):
+        for block in block_splitter(proxies, maxw, rupweight):
             smap.submit((block, cmaker, oq, parent))
     return smap
 
