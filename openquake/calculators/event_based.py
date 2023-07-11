@@ -107,7 +107,8 @@ def event_based(proxies, full_lt, oqparam, dstore, monitor):
     """
     Compute GMFs and optionally hazard curves
     """
-    times = []  # rup_id, nsites, dt
+    sig_eps = []
+    times = []  # rup_id, nsites, 
     trt_smr = proxies[0]['trt_smr']
     fmon = monitor('filtering ruptures', measuremem=False)
     cmon = monitor('computing gmfs', measuremem=False)
@@ -388,7 +389,7 @@ class EventBasedCalculator(base.HazardCalculator):
             self.full_lt = dstore.parent['full_lt']
             set_mags(oq, dstore.parent)
         elif hasattr(self, 'csm'):  # from sources
-            set_mags(oq, self.datastore['source_mags'])
+            set_mags(oq, self.datastore)
             self.build_events_from_sources()
             if (oq.ground_motion_fields is False and
                     oq.hazard_curves_from_gmfs is False):
@@ -432,9 +433,8 @@ class EventBasedCalculator(base.HazardCalculator):
             event_based,
             (proxies, self.full_lt, oq, self.datastore),
             key=operator.itemgetter('trt_smr'),
-            weight=operator.itemgetter('n_occ'),
-            h5=dstore.hdf5,
-            concurrent_tasks=oq.concurrent_tasks or 1)
+            weight=self.srcfilter.rup_weight,
+            h5=dstore.hdf5)
         acc = smap.reduce(self.agg_dicts)
         if 'gmf_data' not in dstore:
             return acc
@@ -487,5 +487,3 @@ class EventBasedCalculator(base.HazardCalculator):
             logging.info('Checking stored GMFs')
             msg = views.view('extreme_gmvs', self.datastore)
             logging.warning(msg)
-        if self.datastore.parent:
-            self.datastore.parent.open('r')
