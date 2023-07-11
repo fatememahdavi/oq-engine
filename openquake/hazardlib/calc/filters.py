@@ -460,7 +460,7 @@ class SourceFilter(object):
     def rup_weight(self, rec):
         hypo = rec['hypo']
         radius = magradius(rec['mag'])
-        return len(self._close_sids(hypo[0], hypo[1], hypo[2], radius))
+        return len(self._close_sids(hypo[0], hypo[1], hypo[2], radius)) + 1
 
     def filter(self, sources):
         """
