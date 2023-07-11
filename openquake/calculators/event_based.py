@@ -24,7 +24,7 @@ import numpy
 import pandas
 
 from openquake.baselib import hdf5, parallel, python3compat
-from openquake.baselib.general import AccumDict, humansize
+from openquake.baselib.general import AccumDict, humansize, groupby
 from openquake.hazardlib.probability_map import ProbabilityMap, get_mean_curve
 from openquake.hazardlib.stats import geom_avg_std, compute_stats
 from openquake.hazardlib.calc.stochastic import sample_ruptures
@@ -103,13 +103,12 @@ def get_computer(cmaker, oqparam, proxy, sids, sitecol,
         oqparam._amplifier, oqparam._sec_perils)
 
             
-def event_based(proxies, oqparam, dstore, monitor):
+def event_based(allproxies, oqparam, dstore, monitor):
     """
     Compute GMFs and optionally hazard curves
     """
     sig_eps = []
     times = []  # rup_id, nsites, 
-    trt_smr = proxies[0]['trt_smr']
     fmon = monitor('filtering ruptures', measuremem=False)
     cmon = monitor('computing gmfs', measuremem=False)
     max_iml = oqparam.get_max_iml()
@@ -117,54 +116,56 @@ def event_based(proxies, oqparam, dstore, monitor):
     se_dt = sig_eps_dt(oqparam.imtls)
     with dstore:
         full_lt = dstore['full_lt'].init()
-        trt = full_lt.trts[trt_smr // TWO24]
         sitecol = dstore['sitecol']
         extra = sitecol.array.dtype.names
-        srcfilter = SourceFilter(sitecol, oqparam.maximum_distance(trt))
         rupgeoms = dstore['rupgeoms']
-        rlzs_by_gsim = full_lt.get_rlzs_by_gsim(trt_smr)
-        cmaker = ContextMaker(trt, rlzs_by_gsim, oqparam, extraparams=extra)
-        cmaker.min_mag = getdefault(oqparam.minimum_magnitude, trt)
         if "station_data" in oqparam.inputs:
             station_data = dstore.read_df('station_data', 'site_id')
             station_sitecol = sitecol.filtered(station_data.index)
         else:
             station_data = None
             station_sitecol = None
-        t0 = time.time()
-        for p, proxy in enumerate(proxies):
-            with fmon:
-                if proxy['mag'] < cmaker.min_mag:
-                    continue
-                sids = srcfilter.close_sids(proxy, trt)
-                if len(sids) == 0:  # filtered away
-                    continue
-                proxy.geom = rupgeoms[proxy['geom_id']]
-                try:
-                    computer = get_computer(
-                        cmaker, oqparam, proxy, sids, sitecol,
-                        station_sitecol, station_data)
-                except FarAwayRupture:
-                    # skip this rupture
-                    continue
-            sig_eps = []
-            with cmon:
-                df = computer.compute_all(scenario, sig_eps, max_iml)
-            dt = time.time() - t0
-            tup = (proxy['id'], len(computer.ctx.sids),
-                   computer.ctx.rrup.min(), dt)
-            times = numpy.array([tup + (monitor.task_no,)], rup_dt)
-            gmfdata = strip_zeros(df)
-            if not oqparam.ground_motion_fields:
-                gmfdata = ()
-            yield dict(gmfdata=gmfdata, times=times,
-                       sig_eps=numpy.array(sig_eps, se_dt))
-            others = proxies[p+1:]
-            if time.time() - t0 > oqparam.time_per_task and len(others) > 10:
-                half = len(others) // 2
-                yield event_based, others[:half], oqparam, dstore
-                yield event_based, others[half:], oqparam, dstore
-                break
+        gb = groupby(allproxies, operator.itemgetter('trt_smr'))
+        for trt_smr, proxies in gb.items():
+            trt = full_lt.trts[trt_smr // TWO24]
+            srcfilter = SourceFilter(sitecol, oqparam.maximum_distance(trt))
+            rlzs_by_gsim = full_lt.get_rlzs_by_gsim(trt_smr)
+            cmaker = ContextMaker(trt, rlzs_by_gsim, oqparam, extraparams=extra)
+            cmaker.min_mag = getdefault(oqparam.minimum_magnitude, trt)
+            t0 = time.time()
+            for p, proxy in enumerate(proxies):
+                with fmon:
+                    if proxy['mag'] < cmaker.min_mag:
+                        continue
+                    sids = srcfilter.close_sids(proxy, trt)
+                    if len(sids) == 0:  # filtered away
+                        continue
+                    proxy.geom = rupgeoms[proxy['geom_id']]
+                    try:
+                        computer = get_computer(
+                            cmaker, oqparam, proxy, sids, sitecol,
+                            station_sitecol, station_data)
+                    except FarAwayRupture:
+                        # skip this rupture
+                        continue
+                sig_eps = []
+                with cmon:
+                    df = computer.compute_all(scenario, sig_eps, max_iml)
+                dt = time.time() - t0
+                tup = (proxy['id'], len(computer.ctx.sids),
+                       computer.ctx.rrup.min(), dt)
+                times = numpy.array([tup + (monitor.task_no,)], rup_dt)
+                gmfdata = strip_zeros(df)
+                if not oqparam.ground_motion_fields:
+                    gmfdata = ()
+                yield dict(gmfdata=gmfdata, times=times,
+                           sig_eps=numpy.array(sig_eps, se_dt))
+                others = proxies[p+1:]
+                if dt > oqparam.time_per_task and len(others) > 10:
+                    half = len(others) // 2
+                    yield event_based, others[:half], oqparam, dstore
+                    yield event_based, others[half:], oqparam, dstore
+                    break
 
 
 def compute_avg_gmf(gmf_df, weights, min_iml):
@@ -226,6 +227,7 @@ class EventBasedCalculator(base.HazardCalculator):
         oq = self.oqparam
         self.csm.fix_src_offset()  # NB: essential
         sources = self.csm.get_sources()
+        self.datastore['trt_smrs'] = self.csm.get_trt_smrs()
 
         # weighting the heavy sources
         self.datastore.swmr_on()
@@ -436,10 +438,7 @@ class EventBasedCalculator(base.HazardCalculator):
             proxies = proxies[0:1]
         dstore.swmr_on()  # must come before the Starmap
         smap = parallel.Starmap.apply(
-            event_based, (proxies, oq, self.datastore),
-            key=operator.itemgetter('trt_smr'),
-            weight=self.srcfilter.rup_weight,
-            h5=dstore.hdf5)
+            event_based, (proxies, oq, self.datastore), h5=dstore.hdf5)
         acc = smap.reduce(self.agg_dicts)
         if 'gmf_data' not in dstore:
             return acc
