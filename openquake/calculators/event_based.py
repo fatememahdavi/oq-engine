@@ -103,7 +103,7 @@ def get_computer(cmaker, oqparam, proxy, sids, sitecol,
         oqparam._amplifier, oqparam._sec_perils)
 
             
-def event_based(proxies, full_lt, oqparam, dstore, monitor):
+def event_based(proxies, oqparam, dstore, monitor):
     """
     Compute GMFs and optionally hazard curves
     """
@@ -112,11 +112,11 @@ def event_based(proxies, full_lt, oqparam, dstore, monitor):
     trt_smr = proxies[0]['trt_smr']
     fmon = monitor('filtering ruptures', measuremem=False)
     cmon = monitor('computing gmfs', measuremem=False)
-    full_lt.init()
     max_iml = oqparam.get_max_iml()
     scenario = 'scenario' in oqparam.calculation_mode
     se_dt = sig_eps_dt(oqparam.imtls)
     with dstore:
+        full_lt = dstore['full_lt'].init()
         trt = full_lt.trts[trt_smr // TWO24]
         sitecol = dstore['sitecol']
         extra = sitecol.array.dtype.names
@@ -163,10 +163,10 @@ def event_based(proxies, full_lt, oqparam, dstore, monitor):
             if time.time() - t0 > oqparam.time_per_task and others:
                 half = len(others) // 2
                 if half > 5:
-                    yield event_based, others[:half], full_lt, oqparam, dstore
-                    yield event_based, others[half:], full_lt, oqparam, dstore
+                    yield event_based, others[:half], oqparam, dstore
+                    yield event_based, others[half:], oqparam, dstore
                 else:
-                    yield event_based(others, full_lt, oqparam, dstore, monitor)
+                    yield event_based(others, oqparam, dstore, monitor)
                 break
 
 
@@ -439,8 +439,7 @@ class EventBasedCalculator(base.HazardCalculator):
             proxies = proxies[0:1]
         dstore.swmr_on()  # must come before the Starmap
         smap = parallel.Starmap.apply(
-            event_based,
-            (proxies, self.full_lt, oq, self.datastore),
+            event_based, (proxies, oq, self.datastore),
             key=operator.itemgetter('trt_smr'),
             weight=self.srcfilter.rup_weight,
             h5=dstore.hdf5)

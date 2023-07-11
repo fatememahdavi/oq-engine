@@ -247,16 +247,15 @@ def gen_outputs(df, crmodel, rng, monitor):
                 yield out
 
 
-def ebrisk(proxies, full_lt, oqparam, dstore, monitor):
+def ebrisk(proxies, oqparam, dstore, monitor):
     """
     :param proxies: list of RuptureProxies with the same trt_smr
-    :param full_lt: a FullLogicTree instance
     :param oqparam: input parameters
     :param monitor: a Monitor instance
     :returns: a dictionary of arrays
     """
     oqparam.ground_motion_fields = True
-    dic = event_based.event_based(proxies, full_lt, oqparam, dstore, monitor)
+    dic = event_based.event_based(proxies, oqparam, dstore, monitor)
     if len(dic['gmfdata']) == 0:  # no GMFs
         return {}
     return event_based_risk(dic['gmfdata'], oqparam, monitor)
@@ -421,7 +420,7 @@ class EventBasedRiskCalculator(event_based.EventBasedCalculator):
             full_lt = self.datastore['full_lt']
             self.datastore.swmr_on()  # must come before the Starmap
             smap = parallel.Starmap.apply_split(
-                ebrisk, (proxies, full_lt, oq, self.datastore),
+                ebrisk, (proxies, oq, self.datastore),
                 key=operator.itemgetter('trt_smr'),
                 weight=operator.itemgetter('n_occ'),
                 h5=self.datastore.hdf5,
