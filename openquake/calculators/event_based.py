@@ -161,7 +161,10 @@ def event_based(proxies, full_lt, oqparam, dstore, monitor):
                        sig_eps=numpy.array(sig_eps, se_dt))
             others = proxies[p+1:]
             if time.time() - t0 > oqparam.time_per_task and others:
-                yield event_based, others, full_lt, oqparam, dstore
+                half = len(others) // 2
+                if half:
+                    yield event_based, others[:half], full_lt, oqparam, dstore
+                yield event_based, others[half:], full_lt, oqparam, dstore
                 break
 
 
