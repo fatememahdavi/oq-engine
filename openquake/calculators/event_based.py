@@ -107,8 +107,6 @@ def event_based(proxies, full_lt, oqparam, dstore, monitor):
     """
     Compute GMFs and optionally hazard curves
     """
-    alldata = AccumDict(accum=[])
-    sig_eps = []
     times = []  # rup_id, nsites, dt
     trt_smr = proxies[0]['trt_smr']
     fmon = monitor('filtering ruptures', measuremem=False)
@@ -116,6 +114,7 @@ def event_based(proxies, full_lt, oqparam, dstore, monitor):
     full_lt.init()
     max_iml = oqparam.get_max_iml()
     scenario = 'scenario' in oqparam.calculation_mode
+    se_dt = sig_eps_dt(oqparam.imtls)
     with dstore:
         trt = full_lt.trts[trt_smr // TWO24]
         sitecol = dstore['sitecol']
@@ -147,25 +146,18 @@ def event_based(proxies, full_lt, oqparam, dstore, monitor):
                 except FarAwayRupture:
                     # skip this rupture
                     continue
+            sig_eps = []
             with cmon:
                 df = computer.compute_all(scenario, sig_eps, max_iml)
             dt = time.time() - t0
-            times.append((proxy['id'], len(computer.ctx.sids),
-                          computer.ctx.rrup.min(), dt))
-            for key in df.columns:
-                alldata[key].extend(df[key])
-    for key, val in sorted(alldata.items()):
-        if key in 'eid sid rlz':
-            alldata[key] = U32(alldata[key])
-        else:
-            alldata[key] = F32(alldata[key])
-    gmfdata = strip_zeros(pandas.DataFrame(alldata))
-    times = numpy.array([tup + (monitor.task_no,) for tup in times], rup_dt)
-    times.sort(order='rup_id')
-    if not oqparam.ground_motion_fields:
-        gmfdata = ()
-    return dict(gmfdata=gmfdata, times=times,
-                sig_eps=numpy.array(sig_eps, sig_eps_dt(oqparam.imtls)))
+            tup = (proxy['id'], len(computer.ctx.sids),
+                   computer.ctx.rrup.min(), dt)
+            times = numpy.array([tup + (monitor.task_no,)], rup_dt)
+            gmfdata = strip_zeros(df)
+            if not oqparam.ground_motion_fields:
+                gmfdata = ()
+            yield dict(gmfdata=gmfdata, times=times,
+                       sig_eps=numpy.array(sig_eps, se_dt))
 
 
 def compute_avg_gmf(gmf_df, weights, min_iml):
@@ -431,15 +423,13 @@ class EventBasedCalculator(base.HazardCalculator):
             # TODO: this is ugly and must be improved upon!
             proxies = proxies[0:1]
         dstore.swmr_on()  # must come before the Starmap
-        smap = parallel.Starmap.apply_split(
+        smap = parallel.Starmap.apply(
             self.core_task.__func__,
             (proxies, self.full_lt, oq, self.datastore),
             key=operator.itemgetter('trt_smr'),
             weight=operator.itemgetter('n_occ'),
             h5=dstore.hdf5,
-            concurrent_tasks=oq.concurrent_tasks or 1,
-            duration=oq.time_per_task,
-            outs_per_task=oq.outs_per_task)
+            concurrent_tasks=oq.concurrent_tasks or 1)
         acc = smap.reduce(self.agg_dicts)
         if 'gmf_data' not in dstore:
             return acc
