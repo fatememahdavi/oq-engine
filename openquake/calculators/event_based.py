@@ -181,6 +181,12 @@ def compute_avg_gmf(gmf_df, weights, min_iml):
     return dic
 
 
+def set_mags(oq, dstore):
+    oq.mags_by_trt = {
+        trt: python3compat.decode(dset[:])
+        for trt, dset in dstore['source_mags'].items()}
+
+
 @base.calculators.add('event_based', 'scenario', 'ucerf_hazard')
 class EventBasedCalculator(base.HazardCalculator):
     """
@@ -380,10 +386,9 @@ class EventBasedCalculator(base.HazardCalculator):
         if oq.hazard_calculation_id:  # from ruptures
             dstore.parent = datastore.read(oq.hazard_calculation_id)
             self.full_lt = dstore.parent['full_lt']
+            set_mags(oq, dstore.parent)
         elif hasattr(self, 'csm'):  # from sources
-            oq.mags_by_trt = {
-                trt: python3compat.decode(dset[:])
-                for trt, dset in self.datastore['source_mags'].items()}
+            set_mags(oq, self.datastore['source_mags'])
             self.build_events_from_sources()
             if (oq.ground_motion_fields is False and
                     oq.hazard_curves_from_gmfs is False):
@@ -424,7 +429,7 @@ class EventBasedCalculator(base.HazardCalculator):
             proxies = proxies[0:1]
         dstore.swmr_on()  # must come before the Starmap
         smap = parallel.Starmap.apply(
-            self.core_task.__func__,
+            event_based,
             (proxies, self.full_lt, oq, self.datastore),
             key=operator.itemgetter('trt_smr'),
             weight=operator.itemgetter('n_occ'),
