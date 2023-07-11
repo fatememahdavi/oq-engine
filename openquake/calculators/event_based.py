@@ -447,15 +447,12 @@ class EventBasedCalculator(base.HazardCalculator):
             # TODO: this is ugly and must be improved upon!
             proxies = proxies[0:1]
         dstore.swmr_on()  # must come before the Starmap
-        smap = parallel.Starmap.apply_split(
+        smap = parallel.Starmap.apply(
             self.core_task.__func__,
             (proxies, self.full_lt, oq, self.datastore),
             key=operator.itemgetter('trt_smr'),
-            weight=operator.itemgetter('n_occ'),
-            h5=dstore.hdf5,
-            concurrent_tasks=oq.concurrent_tasks or 1,
-            duration=oq.time_per_task,
-            outs_per_task=oq.outs_per_task)
+            weight=self.srcfilter.rup_weight,
+            h5=dstore.hdf5)
         if oq.hazard_curves_from_gmfs:
             self.L = oq.imtls.size
             acc0 = {r: ProbabilityMap(self.sitecol.sids, self.L, 1).fill(0)
