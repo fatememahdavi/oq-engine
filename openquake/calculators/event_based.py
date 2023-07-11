@@ -160,13 +160,10 @@ def event_based(proxies, oqparam, dstore, monitor):
             yield dict(gmfdata=gmfdata, times=times,
                        sig_eps=numpy.array(sig_eps, se_dt))
             others = proxies[p+1:]
-            if time.time() - t0 > oqparam.time_per_task and others:
+            if time.time() - t0 > oqparam.time_per_task and len(others) > 10:
                 half = len(others) // 2
-                if half > 5:
-                    yield event_based, others[:half], oqparam, dstore
-                    yield event_based, others[half:], oqparam, dstore
-                else:
-                    yield event_based(others, oqparam, dstore, monitor)
+                yield event_based, others[:half], oqparam, dstore
+                yield event_based, others[half:], oqparam, dstore
                 break
 
 
