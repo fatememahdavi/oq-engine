@@ -339,6 +339,10 @@ def split_source(src):
     return splits
 
 
+def magradius(mag):
+    # from 30 km to ~1000 km
+    return 25 * (1 + (mag/5.)**6)
+
 default = IntegrationDistance({'default': [(MINMAG, 1000), (MAXMAG, 1000)]})
 
 
@@ -452,6 +456,11 @@ class SourceFilter(object):
         sids = U32(self.kdt.query_ball_point(xyz, dist, eps=.001))
         sids.sort()
         return sids
+
+    def rup_weight(self, rec):
+        hypo = rec['hypo']
+        radius = magradius(rec['mag'])
+        return len(self._close_sids(hypo[0], hypo[1], hypo[2], radius))
 
     def filter(self, sources):
         """
