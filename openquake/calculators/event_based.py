@@ -110,7 +110,6 @@ def event_based(proxies, full_lt, oqparam, dstore, monitor):
     alldata = AccumDict(accum=[])
     sig_eps = []
     times = []  # rup_id, nsites, dt
-    hcurves = {}  # key -> poes
     trt_smr = proxies[0]['trt_smr']
     fmon = monitor('filtering ruptures', measuremem=False)
     cmon = monitor('computing gmfs', measuremem=False)
@@ -161,19 +160,11 @@ def event_based(proxies, full_lt, oqparam, dstore, monitor):
         else:
             alldata[key] = F32(alldata[key])
     gmfdata = strip_zeros(pandas.DataFrame(alldata))
-    if len(gmfdata) and oqparam.hazard_curves_from_gmfs:
-        hc_mon = monitor('building hazard curves', measuremem=False)
-        for (sid, rlz), df in gmfdata.groupby(['sid', 'rlz']):
-            with hc_mon:
-                poes = calc.gmvs_to_poes(
-                    df, oqparam.imtls, oqparam.ses_per_logic_tree_path)
-                for m, imt in enumerate(oqparam.imtls):
-                    hcurves[rsi2str(rlz, sid, imt)] = poes[m]
     times = numpy.array([tup + (monitor.task_no,) for tup in times], rup_dt)
     times.sort(order='rup_id')
     if not oqparam.ground_motion_fields:
         gmfdata = ()
-    return dict(gmfdata=gmfdata, hcurves=hcurves, times=times,
+    return dict(gmfdata=gmfdata, times=times,
                 sig_eps=numpy.array(sig_eps, sig_eps_dt(oqparam.imtls)))
 
 
@@ -293,12 +284,11 @@ class EventBasedCalculator(base.HazardCalculator):
     def agg_dicts(self, acc, result):
         """
         :param acc: accumulator dictionary
-        :param result: an AccumDict with events, ruptures, gmfs and hcurves
+        :param result: an AccumDict with events, ruptures and gmfs
         """
         if result is None:  # instead of a dict
             raise MemoryError('You ran out of memory!')
         sav_mon = self.monitor('saving gmfs')
-        agg_mon = self.monitor('aggregating hcurves')
         primary = self.oqparam.get_primary_imtls()
         sec_imts = self.oqparam.get_sec_imts()
         with sav_mon:
@@ -323,12 +313,6 @@ class EventBasedCalculator(base.HazardCalculator):
                 sig_eps = result.pop('sig_eps')
                 hdf5.extend(self.datastore['gmf_data/sigma_epsilon'], sig_eps)
                 self.offset += len(df)
-        imtls = self.oqparam.imtls
-        with agg_mon:
-            for key, poes in result.get('hcurves', {}).items():
-                r, sid, imt = str2rsi(key)
-                array = acc[r].array[sid, imtls(imt), 0]
-                array[:] = 1. - (1. - array) * (1. - poes)
         self.datastore.flush()
         return acc
 
@@ -456,13 +440,7 @@ class EventBasedCalculator(base.HazardCalculator):
             concurrent_tasks=oq.concurrent_tasks or 1,
             duration=oq.time_per_task,
             outs_per_task=oq.outs_per_task)
-        if oq.hazard_curves_from_gmfs:
-            self.L = oq.imtls.size
-            acc0 = {r: ProbabilityMap(self.sitecol.sids, self.L, 1).fill(0)
-                    for r in range(self.R)}
-        else:
-            acc0 = {}
-        acc = smap.reduce(self.agg_dicts, acc0)
+        acc = smap.reduce(self.agg_dicts)
         if 'gmf_data' not in dstore:
             return acc
         if oq.ground_motion_fields:
@@ -507,99 +485,12 @@ class EventBasedCalculator(base.HazardCalculator):
         self.datastore['avg_gmf'] = avg_gmf
         return rel_events
 
-    def post_execute(self, pmap_by_rlz):
-        oq = self.oqparam
-        if (not pmap_by_rlz or not oq.ground_motion_fields and not
-                oq.hazard_curves_from_gmfs):
-            return
-        N = len(self.sitecol.complete)
-        M = len(oq.imtls)  # 0 in scenario
-        L = oq.imtls.size
-        L1 = L // (M or 1)
-        # check seed dependency unless the number of GMFs is huge
+    def post_execute(self, dummy):
+        # check extreme_gmvs unless the number of GMFs is huge
         if 'gmf_data' in self.datastore and self.datastore.getsize(
                 'gmf_data/gmv_0') < 4E9:
             logging.info('Checking stored GMFs')
             msg = views.view('extreme_gmvs', self.datastore)
             logging.warning(msg)
-        if oq.hazard_curves_from_gmfs:
-            rlzs = self.full_lt.get_realizations()
-            # compute and save statistics; this is done in process and can
-            # be very slow if there are thousands of realizations
-            weights = [rlz.weight['weight'] for rlz in rlzs]
-            # NB: in the future we may want to save to individual hazard
-            # curves if oq.individual_rlzs is set; for the moment we
-            # save the statistical curves only
-            hstats = oq.hazard_stats()
-            S = len(hstats)
-            R = len(weights)
-            pmaps = [p.reshape(N, M, L1) for p in pmap_by_rlz.values()]
-            if oq.individual_rlzs:
-                logging.info('Saving individual hazard curves')
-                self.datastore.create_dset('hcurves-rlzs', F32, (N, R, M, L1))
-                self.datastore.set_shape_descr(
-                    'hcurves-rlzs', site_id=N, rlz_id=R,
-                    imt=list(oq.imtls), lvl=numpy.arange(L1))
-                if oq.poes:
-                    P = len(oq.poes)
-                    M = len(oq.imtls)
-                    ds = self.datastore.create_dset(
-                        'hmaps-rlzs', F32, (N, R, M, P))
-                    self.datastore.set_shape_descr(
-                        'hmaps-rlzs', site_id=N, rlz_id=R,
-                        imt=list(oq.imtls), poe=oq.poes)
-                for r in range(R):
-                    self.datastore['hcurves-rlzs'][:, r] = pmaps[r].array
-                    if oq.poes:
-                        [hmap] = calc.make_hmaps([pmaps[r]], oq.imtls, oq.poes)
-                        ds[:, r] = hmap.array
-
-            if S:
-                logging.info('Computing statistical hazard curves')
-                self.datastore.create_dset('hcurves-stats', F32, (N, S, M, L1))
-                self.datastore.set_shape_descr(
-                    'hcurves-stats', site_id=N, stat=list(hstats),
-                    imt=list(oq.imtls), lvl=numpy.arange(L1))
-                if oq.poes:
-                    P = len(oq.poes)
-                    M = len(oq.imtls)
-                    ds = self.datastore.create_dset(
-                        'hmaps-stats', F32, (N, S, M, P))
-                    self.datastore.set_shape_descr(
-                        'hmaps-stats', site_id=N, stat=list(hstats),
-                        imt=list(oq.imtls), poes=oq.poes)
-                for s, stat in enumerate(hstats):
-                    smap = ProbabilityMap(self.sitecol.sids, L1, M)
-                    [smap.array] = compute_stats(
-                        numpy.array([p.array for p in pmaps]),
-                        [hstats[stat]], weights)
-                    self.datastore['hcurves-stats'][:, s] = smap.array
-                    if oq.poes:
-                        [hmap] = calc.make_hmaps([smap], oq.imtls, oq.poes)
-                        ds[:, s] = hmap.array
-
         if self.datastore.parent:
             self.datastore.parent.open('r')
-        if oq.compare_with_classical:  # compute classical curves
-            export_dir = os.path.join(oq.export_dir, 'cl')
-            if not os.path.exists(export_dir):
-                os.makedirs(export_dir)
-            oq.export_dir = export_dir
-            oq.calculation_mode = 'classical'
-            with logs.init('job', vars(oq)) as log:
-                self.cl = ClassicalCalculator(oq, log.calc_id)
-                # TODO: perhaps it is possible to avoid reprocessing the source
-                # model, however usually this is quite fast and do not dominate
-                # the computation
-                self.cl.run()
-                engine.expose_outputs(self.cl.datastore)
-                all = slice(None)
-                for imt in oq.imtls:
-                    cl_mean_curves = get_mean_curve(self.datastore, imt, all)
-                    eb_mean_curves = get_mean_curve(self.datastore, imt, all)
-                    self.rdiff, index = util.max_rel_diff_index(
-                        cl_mean_curves, eb_mean_curves)
-                    logging.warning(
-                        'Relative difference with the classical '
-                        'mean curves: %d%% at site index %d, imt=%s',
-                        self.rdiff * 100, index, imt)
