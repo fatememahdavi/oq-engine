@@ -162,9 +162,11 @@ def event_based(proxies, full_lt, oqparam, dstore, monitor):
             others = proxies[p+1:]
             if time.time() - t0 > oqparam.time_per_task and others:
                 half = len(others) // 2
-                if half:
+                if half > 5:
                     yield event_based, others[:half], full_lt, oqparam, dstore
-                yield event_based, others[half:], full_lt, oqparam, dstore
+                    yield event_based, others[half:], full_lt, oqparam, dstore
+                else:
+                    yield event_based(others, full_lt, oqparam, dstore, monitor)
                 break
 
 
