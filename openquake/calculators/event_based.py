@@ -24,7 +24,7 @@ import operator
 import numpy
 import pandas
 
-from openquake.baselib import hdf5, parallel, python3compat
+from openquake.baselib import hdf5, parallel, python3compat, performance
 from openquake.baselib.general import (
     AccumDict, humansize, groupby, block_splitter)
 from openquake.hazardlib.probability_map import ProbabilityMap, get_mean_curve
@@ -180,39 +180,51 @@ def count_ruptures(src):
     return {src.source_id: src.count_ruptures()}
 
 
-def get_computer(cmaker, proxy, rupgeoms, srcfilter,
-                 station_data, station_sitecol):
+def get_computers(cmaker, proxies, rupgeoms, srcfilter, fmon,
+                  station_data, station_sitecol):
     """
-    :returns: GmfComputer or ConditionedGmfComputer
+    :returns: a list of GmfComputers or ConditionedGmfComputers
     """
-    sids = srcfilter.close_sids(proxy, cmaker.trt)
-    if len(sids) == 0:  # filtered away
-        raise FarAwayRupture
-
-    complete = srcfilter.sitecol.complete
-    proxy.geom = rupgeoms[proxy['geom_id']]
-    ebr = proxy.to_ebr(cmaker.trt)
+    out = []
     oq = cmaker.oq
-
-    if station_sitecol:
-        stations = numpy.isin(sids, station_sitecol.sids)
-        assert stations.sum(), 'There are no stations??'
-        station_sids = sids[stations]
-        target_sids = sids[~stations]
-        return ConditionedGmfComputer(
-            ebr, complete.filtered(target_sids),
-            complete.filtered(station_sids),
-            station_data.loc[station_sids],
-            oq.observed_imts,
-            cmaker, oq.correl_model, oq.cross_correl,
-            oq.ground_motion_correlation_params,
-            oq.number_of_ground_motion_fields,
-            oq._amplifier, oq._sec_perils)
-
-    return GmfComputer(
-        ebr, complete.filtered(sids), cmaker,
-        oq.correl_model, oq.cross_correl,
-        oq._amplifier, oq._sec_perils)
+    complete = srcfilter.sitecol.complete
+    start = 0
+    for proxy in sorted(proxies, key=operator.itemgetter('mag')):
+        with fmon:
+            if proxy['mag'] < cmaker.min_mag:
+                continue
+            sids = srcfilter.close_sids(proxy, cmaker.trt)
+            if len(sids) == 0:  # filtered away
+                continue
+            proxy.geom = rupgeoms[proxy['geom_id']]
+            ebr = proxy.to_ebr(cmaker.trt)
+            try:
+                if station_sitecol:
+                    stations = numpy.isin(sids, station_sitecol.sids)
+                    assert stations.sum(), 'There are no stations??'
+                    station_sids = sids[stations]
+                    target_sids = sids[~stations]
+                    comp = ConditionedGmfComputer(
+                        ebr, complete.filtered(target_sids),
+                        complete.filtered(station_sids),
+                        station_data.loc[station_sids],
+                        oq.observed_imts,
+                        cmaker, oq.correl_model, oq.cross_correl,
+                        oq.ground_motion_correlation_params,
+                        oq.number_of_ground_motion_fields,
+                        oq._amplifier, oq._sec_perils)
+                else:
+                    comp = GmfComputer(
+                        ebr, complete.filtered(sids), cmaker,
+                        oq.correl_model, oq.cross_correl,
+                        oq._amplifier, oq._sec_perils)
+            except FarAwayRupture:
+                continue
+        comp.start = start
+        comp.stop = start + len(comp.ctx)
+        start += len(comp.ctx)
+        out.append(comp)
+    return out
 
 
 def gen_event_based(allproxies, cmaker, stations, dstore, monitor):
@@ -262,28 +274,25 @@ def event_based(proxies, cmaker, stations, dstore, monitor):
         maxdist = oq.maximum_distance(cmaker.trt)
         srcfilter = SourceFilter(sitecol.complete, maxdist)
         rupgeoms = dstore['rupgeoms']
-        for proxy in proxies:
-            t0 = time.time()
-            with fmon:
-                if proxy['mag'] < cmaker.min_mag:
-                    continue
-                try:
-                    computer = get_computer(
-                        cmaker, proxy, rupgeoms, srcfilter, *stations)
-                except FarAwayRupture:
-                    # skip this rupture
-                    continue
-            if hasattr(computer, 'station_data'):  # conditioned GMFs
-                assert cmaker.scenario
-                df = computer.compute_all(dstore, rmon, cmon, umon)
-            else:  # regular GMFs
-                with mmon:
-                    mean_stds = cmaker.get_mean_stds([computer.ctx])
-                df = computer.compute_all(mean_stds, max_iml, cmon, umon)
-            sig_eps.append(computer.build_sig_eps(se_dt))
-            dt = time.time() - t0
-            times.append((proxy['id'], computer.ctx.rrup.min(), dt))
-            alldata.append(df)
+        computers = get_computers(cmaker, proxies, rupgeoms,
+                                  srcfilter, fmon, *stations)
+        if not computers:
+            return dict(gmfdata={}, times=[], sig_eps=[])
+        elif stations[0] is None:  # normal case
+            with mmon:
+                mean_stds = cmaker.get_mean_stds([c.ctx for c in computers])
+            for c in computers:
+                t0 = time.time()
+                ms = mean_stds[:, :, :, c.start:c.stop]
+                alldata.append(c.compute_all(ms, max_iml, cmon, umon))
+                sig_eps.append(c.build_sig_eps(se_dt))
+                dt = time.time() - t0
+                times.append((c.ebrupture.id, c.ctx.rrup.min(), dt))
+        else:  # conditioned GMFs
+            assert cmaker.scenario
+            for c in computers:
+                alldata.append(c.compute_all(dstore, rmon, cmon, umon))
+
     if sum(len(df) for df in alldata):
         gmfdata = pandas.concat(alldata)
     else:
@@ -351,8 +360,8 @@ def starmap_from_rups(func, oq, full_lt, sitecol, dstore, save_tmp=None):
         cmaker.scenario = True
         maxdist = oq.maximum_distance(cmaker.trt)
         srcfilter = SourceFilter(sitecol.complete, maxdist)
-        computer = get_computer(
-            cmaker, proxy, rupgeoms, srcfilter,
+        [computer] = get_computers(
+            cmaker, proxy, rupgeoms, srcfilter, performance.Monitor(),
             station_data, station_sites)
         mean_covs = computer.get_mean_covs()
         for key, val in zip(['mea', 'sig', 'tau', 'phi'], mean_covs):
