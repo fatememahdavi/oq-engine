@@ -282,7 +282,8 @@ def event_based(proxies, cmaker, stations, dstore, monitor):
                 continue
             elif stations[0] is None:  # normal case
                 with mmon:
-                    mean_stds = cmaker.get_mean_stds([c.ctx for c in computers])
+                    mean_stds = cmaker.get_mean_stds([c.ctx for c in computers],
+                                                     split_by_mag=False)
                 for c in computers:
                     t0 = time.time()
                     ms = mean_stds[:, :, :, c.start:c.stop]
