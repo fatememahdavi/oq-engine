@@ -287,6 +287,7 @@ def event_based(proxies, cmaker, stations, dstore, monitor):
                 for c in computers:
                     t0 = time.time()
                     ms = mean_stds[:, :, :, c.start:c.stop]
+                    c.ctx.flags.writeable = True  # avoid numba type error
                     alldata.append(c.compute_all(ms, max_iml, cmon, umon))
                     sig_eps.append(c.build_sig_eps(se_dt))
                     dt = time.time() - t0
