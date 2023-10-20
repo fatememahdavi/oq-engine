@@ -189,7 +189,7 @@ def get_computers(cmaker, proxies, rupgeoms, srcfilter, fmon,
     oq = cmaker.oq
     complete = srcfilter.sitecol.complete
     start = 0
-    for proxy in sorted(proxies, key=operator.itemgetter('mag')):
+    for proxy in proxies:
         with fmon:
             if proxy['mag'] < cmaker.min_mag:
                 continue
@@ -274,24 +274,26 @@ def event_based(proxies, cmaker, stations, dstore, monitor):
         maxdist = oq.maximum_distance(cmaker.trt)
         srcfilter = SourceFilter(sitecol.complete, maxdist)
         rupgeoms = dstore['rupgeoms']
-        computers = get_computers(cmaker, proxies, rupgeoms,
-                                  srcfilter, fmon, *stations)
-        if not computers:
-            return dict(gmfdata={}, times=[], sig_eps=[])
-        elif stations[0] is None:  # normal case
-            with mmon:
-                mean_stds = cmaker.get_mean_stds([c.ctx for c in computers])
-            for c in computers:
-                t0 = time.time()
-                ms = mean_stds[:, :, :, c.start:c.stop]
-                alldata.append(c.compute_all(ms, max_iml, cmon, umon))
-                sig_eps.append(c.build_sig_eps(se_dt))
-                dt = time.time() - t0
-                times.append((c.ebrupture.id, c.ctx.rrup.min(), dt))
-        else:  # conditioned GMFs
-            assert cmaker.scenario
-            for c in computers:
-                alldata.append(c.compute_all(dstore, rmon, cmon, umon))
+        for block in block_splitter(
+                proxies, 10, key=operator.itemgetter('mag'), sort=True):
+            computers = get_computers(cmaker, block, rupgeoms,
+                                      srcfilter, fmon, *stations)
+            if not computers:
+                continue
+            elif stations[0] is None:  # normal case
+                with mmon:
+                    mean_stds = cmaker.get_mean_stds([c.ctx for c in computers])
+                for c in computers:
+                    t0 = time.time()
+                    ms = mean_stds[:, :, :, c.start:c.stop]
+                    alldata.append(c.compute_all(ms, max_iml, cmon, umon))
+                    sig_eps.append(c.build_sig_eps(se_dt))
+                    dt = time.time() - t0
+                    times.append((c.ebrupture.id, c.ctx.rrup.min(), dt))
+            else:  # conditioned GMFs
+                assert cmaker.scenario
+                for c in computers:
+                    alldata.append(c.compute_all(dstore, rmon, cmon, umon))
 
     if sum(len(df) for df in alldata):
         gmfdata = pandas.concat(alldata)
