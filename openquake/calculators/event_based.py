@@ -303,8 +303,10 @@ def event_based(proxies, cmaker, stations, dstore, monitor):
         gmfdata = {}
     if len(gmfdata) == 0:
         return dict(gmfdata={}, times=times, sig_eps=())
+    if len(sig_eps):
+        sig_eps = numpy.concatenate(sig_eps, dtype=se_dt)
     return dict(gmfdata={k: gmfdata[k].to_numpy() for k in gmfdata.columns},
-                times=times, sig_eps=numpy.concatenate(sig_eps, dtype=se_dt))
+                times=times, sig_eps=sig_eps)
 
 
 def filter_stations(station_df, complete, rup, maxdist):
@@ -357,11 +359,12 @@ def starmap_from_rups(func, oq, full_lt, sitecol, dstore, save_tmp=None):
     if "station_data" in oq.inputs:
         rlzs_by_gsim = full_lt.get_rlzs_by_gsim(0)
         cmaker = ContextMaker(trt, rlzs_by_gsim, oq)
+        cmaker.min_mag = getdefault(oq.minimum_magnitude, trt)
         cmaker.scenario = True
         maxdist = oq.maximum_distance(cmaker.trt)
         srcfilter = SourceFilter(sitecol.complete, maxdist)
         [computer] = get_computers(
-            cmaker, proxy, rupgeoms, srcfilter, performance.Monitor(),
+            cmaker, [proxy], rupgeoms, srcfilter, performance.Monitor(),
             station_data, station_sites)
         mean_covs = computer.get_mean_covs()
         for key, val in zip(['mea', 'sig', 'tau', 'phi'], mean_covs):
