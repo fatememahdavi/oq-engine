@@ -331,29 +331,33 @@ def fix_geometry_sections(smdict, dstore):
     s2i = {suid: i for i, suid in enumerate(sections)}
     for idx, sec in enumerate(sections.values()):
         sec.suid = idx
-    if sections:
-        assert dstore, ('You forgot to pass the dstore to '
+    if not sections:
+        return
+    assert dstore, ('You forgot to pass the dstore to '
                         'get_composite_source_model')
-        with hdf5.File(dstore.tempname, 'w') as h5:
-            h5.save_vlen('multi_fault_sections',
-                         [kite_to_geom(sec) for sec in sections.values()])
+    with hdf5.File(dstore.tempname, 'w') as h5:
+        h5.save_vlen('multi_fault_sections',
+                     [kite_to_geom(sec) for sec in sections.values()])
 
-    # fix the MultiFaultSources
-    section_idxs = []
-    for smod in smodels:
-        for sg in smod.src_groups:
-            for src in sg:
-                if hasattr(src, 'set_sections'):
-                    if not sections:
-                        raise RuntimeError('Missing geometryModel files!')
-                    if dstore:
+        # fix the MultiFaultSources
+        section_idxs = []
+        for smod in smodels:
+            for sg in smod.src_groups:
+                for src in sg:
+                    if hasattr(src, 'set_sections'):
+                        if not sections:
+                            raise RuntimeError('Missing geometryModel files!')
                         src.hdf5path = dstore.tempname
-                    src.rupture_idxs = [U16([s2i[idx] for idx in idxs])
+                        rupture_idxs = [U16([s2i[idx] for idx in idxs])
                                         for idxs in src.rupture_idxs]
-                    for idxs in src.rupture_idxs:
-                        section_idxs.extend(idxs)
-    cnt = collections.Counter(section_idxs)
-    if cnt:
+                        src.rupture_idxs = []
+                        # reset the rupture_idxs so that they can be read
+                        # from the hdf5path in MultiFaultSource.__getstate__
+                        h5.save_vlen(f'{src.source_id}/rupture_idxs',
+                                     rupture_idxs)
+                        for idxs in src.rupture_idxs:
+                            section_idxs.extend(idxs)
+        cnt = collections.Counter(section_idxs)
         mean_counts = numpy.mean(list(cnt.values()))
         logging.info('Section multiplicity = %.1f', mean_counts)
 

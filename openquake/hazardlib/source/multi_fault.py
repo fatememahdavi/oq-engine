@@ -69,6 +69,7 @@ class MultiFaultSource(BaseSeismicSource):
     MODIFICATIONS = {}
     hdf5path = ''
     grp_id = 0
+    start = 0
 
     def __init__(self, source_id: str, name: str, tectonic_region_type: str,
                  rupture_idxs: list, occurrence_probs: Union[list, np.ndarray],
@@ -184,6 +185,7 @@ class MultiFaultSource(BaseSeismicSource):
                 self.rakes[slc])
             src.hdf5path = self.hdf5path
             src.num_ruptures = src.count_ruptures()
+            src.start = i * BLOCKSIZE
             yield src
 
     def count_ruptures(self):
@@ -225,13 +227,20 @@ class MultiFaultSource(BaseSeismicSource):
                     probs_occur=self.probs_occur,
                     rupture_idxs=self.rupture_idxs,
                     source_id=self.source_id,
+                    name=self.name,
                     hdf5path=self.hdf5path,
                     tectonic_region_type=self.tectonic_region_type,
                     investigation_time=self.investigation_time,
                     infer_occur_rates=self.infer_occur_rates,
                     occur_rates=self.occur_rates,
                     grp_id=self.grp_id,
+                    start=self.start,
                     num_ruptures=self.num_ruptures)
 
     def __setstate__(self, dic):
         vars(self).update(dic)
+        if len(self.rupture_idxs) == 0:
+            with hdf5.File(self.hdf5path, 'r') as h5:
+                srcid = self.source_id.split(':')[0]
+                slc = slice(self.start, self.start + BLOCKSIZE)
+                self.rupture_idxs = h5[f'{srcid}/rupture_idxs'][slc]
