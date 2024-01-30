@@ -75,8 +75,8 @@ class MultiFaultSource(BaseSeismicSource):
                  rupture_idxs: list, occurrence_probs: Union[list, np.ndarray],
                  magnitudes: list, rakes: list, investigation_time=0.,
                  infer_occur_rates=False):
-        nrups = len(rupture_idxs)
-        assert len(occurrence_probs) == len(magnitudes) == len(rakes) == nrups
+        nrups = len(magnitudes)
+        assert len(occurrence_probs) == len(rakes) == nrups
         self.rupture_idxs = rupture_idxs
         self.probs_occur = occurrence_probs
         self.mags = magnitudes
@@ -150,6 +150,7 @@ class MultiFaultSource(BaseSeismicSource):
         # iter on the ruptures
         step = kwargs.get('step', 1)
         n = len(self.mags)
+        self.__setstate__(vars(self))
         s = self.get_sections()
         for i in range(0, n, step**2):
             idxs = self.rupture_idxs[i]
