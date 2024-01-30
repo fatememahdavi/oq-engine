@@ -68,20 +68,25 @@ class MultiFaultSource(BaseSeismicSource):
     code = b'F'
     MODIFICATIONS = {}
     hdf5path = ''
+    grp_id = 0
 
     def __init__(self, source_id: str, name: str, tectonic_region_type: str,
                  rupture_idxs: list, occurrence_probs: Union[list, np.ndarray],
-                 magnitudes: list, rakes: list, infer_occur_rates=False):
+                 magnitudes: list, rakes: list, investigation_time=0.,
+                 infer_occur_rates=False):
         nrups = len(rupture_idxs)
         assert len(occurrence_probs) == len(magnitudes) == len(rakes) == nrups
         self.rupture_idxs = rupture_idxs
         self.probs_occur = occurrence_probs
         self.mags = magnitudes
         self.rakes = rakes
+        self.investigation_time = investigation_time
         self.infer_occur_rates = infer_occur_rates
         if infer_occur_rates:
             self.occur_rates = -np.log([p[0] for p in occurrence_probs])
             self.occur_rates[self.occur_rates <= 0] = 1E-30
+        else:
+            self.occur_rates = ()
         super().__init__(source_id, name, tectonic_region_type)
 
     def is_gridded(self):
@@ -138,6 +143,8 @@ class MultiFaultSource(BaseSeismicSource):
         # Check
         if not self.hdf5path and 'sections' not in self.__dict__:
             raise RuntimeError('You forgot to call set_sections in %s!' % self)
+        if self.infer_occur_rates:
+            tom = PoissonTOM(self.investigation_time)
 
         # iter on the ruptures
         step = kwargs.get('step', 1)
@@ -155,8 +162,7 @@ class MultiFaultSource(BaseSeismicSource):
             if self.infer_occur_rates:
                 yield ParametricProbabilisticRupture(
                     self.mags[i], rake, self.tectonic_region_type,
-                    hypo, sfc, self.occur_rates[i],
-                    self.temporal_occurrence_model)
+                    hypo, sfc, self.occur_rates[i], tom)
             else:
                 yield NonParametricProbabilisticRupture(
                     self.mags[i], rake, self.tectonic_region_type, hypo, sfc,
@@ -214,14 +220,18 @@ class MultiFaultSource(BaseSeismicSource):
         a2 = angular_distance(maxdist, north, south)
         return west - a2, south - a1, east + a2, north + a1
 
-    def _getstate__(self):
+    def __getstate__(self):
         return dict(mags=self.mags, rakes=self.rakes,
                     probs_occur=self.probs_occur,
                     rupture_idxs=self.rupture_idxs,
                     source_id=self.source_id,
                     hdf5path=self.hdf5path,
                     tectonic_region_type=self.tectonic_region_type,
-                    infer_occur_rates=self.infer_occur_rates)
+                    investigation_time=self.investigation_time,
+                    infer_occur_rates=self.infer_occur_rates,
+                    occur_rates=self.occur_rates,
+                    grp_id=self.grp_id,
+                    num_ruptures=self.num_ruptures)
 
-    def _setstate__(self, dic):
+    def __setstate__(self, dic):
         vars(self).update(dic)
