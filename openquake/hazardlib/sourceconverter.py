@@ -1151,8 +1151,10 @@ class SourceConverter(RuptureConverter):
             mfs = MultiFaultSource(sid, name, trt, idxs,
                                    dic['probs_occur'],
                                    dic['mag'], dic['rake'],
-                                   self.investigation_time,
                                    self.infer_occur_rates)
+            if self.infer_occur_rates:
+                mfs.temporal_occurrence_model = PoissonTOM(
+                    self.investigation_time)
             return mfs
         probs = []
         mags = []
@@ -1181,8 +1183,9 @@ class SourceConverter(RuptureConverter):
         rakes = numpy.array(rakes)
         # NB: the sections will be fixed later on, in source_reader
         mfs = MultiFaultSource(sid, name, trt, idxs, probs, mags, rakes,
-                               self.investigation_time,
                                self.infer_occur_rates)
+        if self.infer_occur_rates:
+            mfs.temporal_occurrence_model = PoissonTOM(self.investigation_time)
         return mfs
 
     def convert_sourceModel(self, node):

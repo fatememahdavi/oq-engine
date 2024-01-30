@@ -71,8 +71,7 @@ class MultiFaultSource(BaseSeismicSource):
 
     def __init__(self, source_id: str, name: str, tectonic_region_type: str,
                  rupture_idxs: list, occurrence_probs: Union[list, np.ndarray],
-                 magnitudes: list, rakes: list, investigation_time=0,
-                 infer_occur_rates=False):
+                 magnitudes: list, rakes: list, infer_occur_rates=False):
         nrups = len(rupture_idxs)
         assert len(occurrence_probs) == len(magnitudes) == len(rakes) == nrups
         self.rupture_idxs = rupture_idxs
@@ -83,7 +82,6 @@ class MultiFaultSource(BaseSeismicSource):
         if infer_occur_rates:
             self.occur_rates = -np.log([p[0] for p in occurrence_probs])
             self.occur_rates[self.occur_rates <= 0] = 1E-30
-            self.temporal_occurrence_model = PoissonTOM(investigation_time)
         super().__init__(source_id, name, tectonic_region_type)
 
     def is_gridded(self):
@@ -215,3 +213,15 @@ class MultiFaultSource(BaseSeismicSource):
         a1 = maxdist * KM_TO_DEGREES
         a2 = angular_distance(maxdist, north, south)
         return west - a2, south - a1, east + a2, north + a1
+
+    def _getstate__(self):
+        return dict(mags=self.mags, rakes=self.rakes,
+                    probs_occur=self.probs_occur,
+                    rupture_idxs=self.rupture_idxs,
+                    source_id=self.source_id,
+                    hdf5path=self.hdf5path,
+                    tectonic_region_type=self.tectonic_region_type,
+                    infer_occur_rates=self.infer_occur_rates)
+
+    def _setstate__(self, dic):
+        vars(self).update(dic)
