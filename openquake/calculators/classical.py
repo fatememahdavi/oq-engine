@@ -537,6 +537,49 @@ class ClassicalCalculator(base.HazardCalculator):
             if oq.use_rates and self.N == 1:  # sanity check
                 self.check_mean_rates(mrs)
 
+    def execute_big(self, maxw):
+        """
+        Use parallel tiling
+        """
+        oq = self.oqparam
+        assert not oq.disagg_by_src
+        assert self.N > self.oqparam.max_sites_disagg, self.N
+        allargs = []
+        self.ntiles = []
+        if '_csm' in self.datastore.parent:
+            ds = self.datastore.parent
+        else:
+            ds = self.datastore
+        sg_weights = []
+        for cm in self.cmakers:
+            sg = self.csm.src_groups[cm.grp_id]
+            sg_weights.append(sg.weight)
+            cm.rup_indep = getattr(sg, 'rup_interdep', None) != 'mutex'
+            cm.pmap_max_mb = float(config.memory.pmap_max_mb)
+            if sg.atomic or sg.weight <= maxw:
+                allargs.append((None, self.sitecol, cm, ds))
+            else:
+                tiles = self.sitecol.split(numpy.ceil(sg.weight / maxw))
+                logging.info('Group #%d, %d tiles', cm.grp_id, len(tiles))
+                for tile in tiles:
+                    allargs.append((None, tile, cm, ds))
+                    self.ntiles.append(len(tiles))
+
+        # order arguments by reverse weight (heavy first)
+        idxs = numpy.argsort(sg_weights)[::-1]
+        allargs = numpy.array(allargs)[idxs]
+
+        logging.warning('Generated at most %d tiles', max(self.ntiles))
+        self.datastore.swmr_on()  # must come before the Starmap
+        for dic in parallel.Starmap(
+                classical, allargs, h5=self.datastore.hdf5):
+            pnemap = dic['pnemap']
+            self.cfactor += dic['cfactor']
+            gid = self.gids[dic['grp_id']][0]
+            nbytes = self.haz.store_rates(pnemap, pnemap.sids, gid)
+        logging.info('Stored %s of rates', humansize(nbytes))
+        return {}
+
     def check_mean_rates(self, mean_rates_by_src):
         """
         The sum of the mean_rates_by_src must correspond to the mean_rates
@@ -551,42 +594,6 @@ class ClassicalCalculator(base.HazardCalculator):
             # (it happens in logictree/case_05 and in Japan)
             ok = got[m] < 10.
             numpy.testing.assert_allclose(got[m, ok], exp[m, ok], atol=1E-5)
-
-    def execute_big(self, maxw):
-        """
-        Use parallel tiling
-        """
-        oq = self.oqparam
-        assert not oq.disagg_by_src
-        assert self.N > self.oqparam.max_sites_disagg, self.N
-        allargs = []
-        self.ntiles = []
-        if '_csm' in self.datastore.parent:
-            ds = self.datastore.parent
-        else:
-            ds = self.datastore
-        for cm in self.cmakers:
-            sg = self.csm.src_groups[cm.grp_id]
-            cm.rup_indep = getattr(sg, 'rup_interdep', None) != 'mutex'
-            cm.pmap_max_mb = float(config.memory.pmap_max_mb)
-            if sg.atomic or sg.weight <= maxw:
-                allargs.append((None, self.sitecol, cm, ds))
-            else:
-                tiles = self.sitecol.split(numpy.ceil(sg.weight / maxw))
-                logging.info('Group #%d, %d tiles', cm.grp_id, len(tiles))
-                for tile in tiles:
-                    allargs.append((None, tile, cm, ds))
-                    self.ntiles.append(len(tiles))
-        logging.warning('Generated at most %d tiles', max(self.ntiles))
-        self.datastore.swmr_on()  # must come before the Starmap
-        for dic in parallel.Starmap(
-                classical, allargs, h5=self.datastore.hdf5):
-            pnemap = dic['pnemap']
-            self.cfactor += dic['cfactor']
-            gid = self.gids[dic['grp_id']][0]
-            nbytes = self.haz.store_rates(pnemap, pnemap.sids, gid)
-        logging.info('Stored %s of rates', humansize(nbytes))
-        return {}
 
     def store_info(self):
         """
