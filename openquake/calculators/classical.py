@@ -553,21 +553,23 @@ class ClassicalCalculator(base.HazardCalculator):
         sg_weights = []
         for cm in self.cmakers:
             sg = self.csm.src_groups[cm.grp_id]
-            sg_weights.append(sg.weight)
             cm.rup_indep = getattr(sg, 'rup_interdep', None) != 'mutex'
             cm.pmap_max_mb = float(config.memory.pmap_max_mb)
             if sg.atomic or sg.weight <= maxw:
                 allargs.append((None, self.sitecol, cm, ds))
+                sg_weights.append(sg.weight)
             else:
                 tiles = self.sitecol.split(numpy.ceil(sg.weight / maxw))
                 logging.info('Group #%d, %d tiles', cm.grp_id, len(tiles))
                 for tile in tiles:
                     allargs.append((None, tile, cm, ds))
                     self.ntiles.append(len(tiles))
+                    sg_weights.append(sg.weight / len(tiles))
 
         # order arguments by reverse weight (heavy first)
         idxs = numpy.argsort(sg_weights)[::-1]
-        allargs = numpy.array(allargs)[idxs]
+        allargs = numpy.array(allargs, object)[idxs]
+        import pdb; pdb.set_trace()
 
         logging.warning('Generated at most %d tiles', max(self.ntiles))
         self.datastore.swmr_on()  # must come before the Starmap
