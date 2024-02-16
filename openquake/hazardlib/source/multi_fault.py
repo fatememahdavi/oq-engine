@@ -140,7 +140,7 @@ class MultiFaultSource(BaseSeismicSource):
         for sec, idx in zip(sections, idxs):
             sec.idx = idx
         return sections
-
+        
     def iter_ruptures(self, **kwargs):
         """
         An iterator for the ruptures.

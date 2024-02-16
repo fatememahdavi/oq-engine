@@ -34,7 +34,7 @@ from openquake.hazardlib.nrml import SourceModel
 
 BASE_DATA_PATH = os.path.join(os.path.dirname(__file__), 'data')
 aac = numpy.testing.assert_allclose
-PLOTTING = False
+PLOTTING = True
 
 
 class MultiFaultTestCase(unittest.TestCase):
@@ -214,12 +214,6 @@ def main100sites():
     secparams = build_secparams(src.get_sections())
     srcfilter = calc.filters.SourceFilter(sitecol, cmaker.maximum_distance)
     src.set_msparams(secparams)
-    sites = srcfilter.get_close_sites(src)
-    with cProfile.Profile() as prof:
-        list(cmaker.get_ctx_iter(src, sites))
-    prof.print_stats('cumulative')
-    print(cmaker.ir_mon)
-    print(cmaker.ctx_mon)
     # determine unique tors
     rups = list(src.iter_ruptures())
     lines = []
@@ -231,6 +225,18 @@ def main100sites():
     uni, inv = numpy.unique(data, return_inverse=True)
     print('Found %d/%d unique segments' % (len(uni), len(data)))
 
+    if PLOTTING:
+        for rup in rups[::100]:
+            coos = numpy.concatenate(rup.surface.tor.coos)  # shape (2S, 3)
+            plt.scatter(coos[:, 0], coos[:, 1])
+        plt.show()
+
+    sites = srcfilter.get_close_sites(src)
+    with cProfile.Profile() as prof:
+        list(cmaker.get_ctx_iter(src, sites))
+    prof.print_stats('cumulative')
+    print(cmaker.ir_mon)
+    print(cmaker.ctx_mon)
 
 if __name__ == '__main__':
     main100sites()

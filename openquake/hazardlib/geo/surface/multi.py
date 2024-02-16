@@ -65,12 +65,29 @@ def build_secparams(sections):
     return secparams
 
 
+def genlines(secparams):
+    for tl0, tl1, tr0, tr1 in secparams[['tl0', 'tl1', 'tr0', 'tr1']]:
+        coo = np.array([[tl0, tl1], [tr0, tr1]], np.float64)
+        yield geo.Line.from_coo(coo)
+
+
 def build_msparams(rupture_idxs, secparams):
     """
     :returns: a structured array of parameters
     """
     U = len(rupture_idxs)
     msparams = np.zeros(U, MS_DT)
+    
+    # building tuws
+    lons = np.concatenate([secparams['tl0'], secparams['tr0']])
+    lats = np.concatenate([secparams['tl1'], secparams['tr1']])
+    mesh = Mesh(lons, lats)
+    tuws = []
+    for line in genlines(secparams):
+        tuw0 = line.get_tuw(mesh)
+        tuw1 = line.flip().get_tuw(mesh)
+        tuws.append(np.array([tuw0, tuw1]))  # shape (2, 3, N)
+
     for msparam, idxs in zip(msparams, rupture_idxs):
         secparam = secparams[idxs]
 
@@ -85,11 +102,16 @@ def build_msparams(rupture_idxs, secparams):
         msparam['zbot'] = ws @ secparam['zbot']
 
         # building u_max
-        tors = []
-        for tl0, tl1, tr0, tr1 in secparam[['tl0', 'tl1', 'tr0', 'tr1']]:
-            coo = np.array([[tl0, tl1], [tr0, tr1]], np.float64)
-            tors.append(geo.Line.from_coo(coo))
-        msparam['u_max'] = geo.MultiLine(tors).u_max
+        S, N = len(idxs), len(mesh)
+        tor = geo.multiline.MultiLine(list(genlines(secparam)))
+        tuw = np.zeros((3, S, N))
+        # keep the flipped values and then reorder the surface indices
+        for s in range(S):
+            idx = tor.soidx[s]
+            flip = int(tor.flipped[idx])
+            tuw[:, s, :] = tuws[idx][flip]  # shape (3, N)
+        t, u = geo.multiline._get_tu(tor.shift, tuw)
+        msparam['u_max'] = np.abs(u).max()
 
         # building bounding box
         lons = np.concatenate([secparam['west'], secparam['east']])

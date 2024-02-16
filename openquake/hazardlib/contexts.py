@@ -77,7 +77,7 @@ def _get(surfaces, param, secdists, mask=slice(None)):
     return arr  # shape (S, N, ...)
 
 
-def _get_tu(rup, secdists, mask):
+def _get_tu(rup, secdists, mask=slice(None)):
     tor = rup.surface.tor
     arr = _get(rup.surface.surfaces, 'tuw', secdists, mask)
     S, N = arr.shape[:2]
