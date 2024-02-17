@@ -21,8 +21,8 @@ Module :mod:`openquake.hazardlib.geo.surface.multi` defines
 """
 from functools import cached_property
 import numpy as np
-import pandas
 from shapely.geometry import Polygon
+from openquake.baselib import performance
 from openquake.hazardlib.geo.surface.base import BaseSurface
 from openquake.hazardlib.geo.mesh import Mesh
 from openquake.hazardlib.geo import utils
@@ -71,7 +71,8 @@ def genlines(secparams):
         yield geo.Line.from_coo(coo)
 
 
-def build_msparams(rupture_idxs, secparams):
+def build_msparams(rupture_idxs, secparams,
+                   mon1=performance.Monitor(), mon2=performance.Monitor()):
     """
     :returns: a structured array of parameters
     """
@@ -79,48 +80,50 @@ def build_msparams(rupture_idxs, secparams):
     msparams = np.zeros(U, MS_DT)
     
     # building tuws
-    lons = np.concatenate([secparams['tl0'], secparams['tr0']])
-    lats = np.concatenate([secparams['tl1'], secparams['tr1']])
-    mesh = Mesh(lons, lats)
-    tuws = []
-    for line in genlines(secparams):
-        tuw0 = line.get_tuw(mesh)
-        tuw1 = line.flip().get_tuw(mesh)
-        tuws.append(np.array([tuw0, tuw1]))  # shape (2, 3, N)
+    with mon1:
+        lons = np.concatenate([secparams['tl0'], secparams['tr0']])
+        lats = np.concatenate([secparams['tl1'], secparams['tr1']])
+        mesh = Mesh(lons, lats)
+        tuws = []
+        for line in genlines(secparams):
+            tuw0 = line.get_tuw(mesh)
+            tuw1 = line.flip().get_tuw(mesh)
+            tuws.append(np.array([tuw0, tuw1]))  # shape (2, 3, N)
 
-    for msparam, idxs in zip(msparams, rupture_idxs):
-        secparam = secparams[idxs]
+    with mon2:
+        for msparam, idxs in zip(msparams, rupture_idxs):
+            secparam = secparams[idxs]
 
-        # building simple multisurface params
-        areas = secparam['area']
-        msparam['area'] = areas.sum()
-        ws = areas / msparam['area']  # weights
-        msparam['dip'] = ws @ secparam['dip']
-        msparam['strike'] = utils.angular_mean(secparam['strike'], ws) % 360
-        msparam['width'] = ws @ secparam['width']
-        msparam['ztor'] = ws @ secparam['ztor']
-        msparam['zbot'] = ws @ secparam['zbot']
+            # building simple multisurface params
+            areas = secparam['area']
+            msparam['area'] = areas.sum()
+            ws = areas / msparam['area']  # weights
+            msparam['dip'] = ws @ secparam['dip']
+            msparam['strike'] = utils.angular_mean(secparam['strike'], ws) % 360
+            msparam['width'] = ws @ secparam['width']
+            msparam['ztor'] = ws @ secparam['ztor']
+            msparam['zbot'] = ws @ secparam['zbot']
 
-        # building u_max
-        S, N = len(idxs), len(mesh)
-        tor = geo.multiline.MultiLine(list(genlines(secparam)))
-        tuw = np.zeros((3, S, N))
-        # keep the flipped values and then reorder the surface indices
-        for s in range(S):
-            idx = tor.soidx[s]
-            flip = int(tor.flipped[idx])
-            tuw[:, s, :] = tuws[idx][flip]  # shape (3, N)
-        t, u = geo.multiline._get_tu(tor.shift, tuw)
-        msparam['u_max'] = np.abs(u).max()
+            # building u_max
+            S, N = len(idxs), len(mesh)
+            tor = geo.multiline.MultiLine(list(genlines(secparam)))
+            tuw = np.zeros((3, S, N))
+            # keep the flipped values and then reorder the surface indices
+            for s in range(S):
+                idx = tor.soidx[s]
+                flip = int(tor.flipped[idx])
+                tuw[:, s, :] = tuws[idx][flip]  # shape (3, N)
+            t, u = geo.multiline._get_tu(tor.shift, tuw)
+            msparam['u_max'] = np.abs(u).max()
 
-        # building bounding box
-        lons = np.concatenate([secparam['west'], secparam['east']])
-        lats = np.concatenate([secparam['north'], secparam['south']])
-        bb = utils.get_spherical_bounding_box(lons, lats)
-        msparam['west'] = bb[0]
-        msparam['east'] = bb[1]
-        msparam['north'] = bb[2]
-        msparam['south'] = bb[3]
+            # building bounding box
+            lons = np.concatenate([secparam['west'], secparam['east']])
+            lats = np.concatenate([secparam['north'], secparam['south']])
+            bb = utils.get_spherical_bounding_box(lons, lats)
+            msparam['west'] = bb[0]
+            msparam['east'] = bb[1]
+            msparam['north'] = bb[2]
+            msparam['south'] = bb[3]
 
     return msparams
 
