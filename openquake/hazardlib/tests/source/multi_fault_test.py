@@ -21,7 +21,7 @@ import unittest
 import numpy
 import pandas
 import matplotlib.pyplot as plt
-from openquake.baselib import hdf5, python3compat, general, writers
+from openquake.baselib import hdf5, python3compat, general, writers, performance
 from openquake.hazardlib.site import SiteCollection
 from openquake.hazardlib import valid, contexts, calc
 from openquake.hazardlib.source.multi_fault import (
@@ -34,7 +34,7 @@ from openquake.hazardlib.nrml import SourceModel
 
 BASE_DATA_PATH = os.path.join(os.path.dirname(__file__), 'data')
 aac = numpy.testing.assert_allclose
-PLOTTING = True
+PLOTTING = False
 
 
 class MultiFaultTestCase(unittest.TestCase):
@@ -79,6 +79,8 @@ class MultiFaultTestCase(unittest.TestCase):
         self.pmfs = numpy.array(pmfs)
         self.mags = numpy.array(rup_mags)
         self.rakes = numpy.array(rakes)
+        self.mon1 = performance.Monitor('building tuws')
+        self.mon2 = performance.Monitor('building msparams')
 
     # NB: there are no flips in this test; see case_75 for that
     def test_ok(self):
@@ -113,7 +115,7 @@ class MultiFaultTestCase(unittest.TestCase):
 
         # test rupture generation
         secparams = build_secparams(src.get_sections())
-        src.set_msparams(secparams)
+        src.set_msparams(secparams, self.mon1, self.mon2)
         rups = list(src.iter_ruptures())
         self.assertEqual(7, len(rups))
 
@@ -176,7 +178,7 @@ class MultiFaultTestCase(unittest.TestCase):
         gsim = valid.gsim('AbrahamsonEtAl2014NSHMPMean')
         cmaker = contexts.simple_cmaker([gsim], ['PGA'])
         secparams = build_secparams(src.get_sections())
-        src.set_msparams(secparams)
+        src.set_msparams(secparams, self.mon1, self.mon2)
         [ctxt] = cmaker.from_srcs([src], sitecol)
         print(cmaker.ir_mon)
         print(cmaker.ctx_mon)
@@ -213,7 +215,9 @@ def main100sites():
     cmaker = contexts.simple_cmaker([gsim], ['PGA'])
     secparams = build_secparams(src.get_sections())
     srcfilter = calc.filters.SourceFilter(sitecol, cmaker.maximum_distance)
-    src.set_msparams(secparams)
+    mon1 = performance.Monitor('building tuws', measuremem=True)
+    mon2 = performance.Monitor('building msparams', measuremem=True)
+    src.set_msparams(secparams, mon1, mon2)
     # determine unique tors
     rups = list(src.iter_ruptures())
     lines = []

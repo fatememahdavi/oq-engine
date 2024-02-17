@@ -84,11 +84,11 @@ def build_msparams(rupture_idxs, secparams,
         lons = np.concatenate([secparams['tl0'], secparams['tr0']])
         lats = np.concatenate([secparams['tl1'], secparams['tr1']])
         mesh = Mesh(lons, lats)
-        tuws = []
-        for line in genlines(secparams):
-            tuw0 = line.get_tuw(mesh)
-            tuw1 = line.flip().get_tuw(mesh)
-            tuws.append(np.array([tuw0, tuw1]))  # shape (2, 3, N)
+        L = len(secparams)  # total number of sections
+        tuws = np.zeros((L, 2, 3, 2*L), np.float32)
+        for s, line in enumerate(genlines(secparams)):
+            tuws[s, 0] = line.get_tuw(mesh)
+            tuws[s, 1] = line.flip().get_tuw(mesh)
 
     with mon2:
         for msparam, idxs in zip(msparams, rupture_idxs):
@@ -107,14 +107,16 @@ def build_msparams(rupture_idxs, secparams,
             # building u_max
             S, N = len(idxs), len(mesh)
             tor = geo.multiline.MultiLine(list(genlines(secparam)))
-            tuw = np.zeros((3, S, N))
+            us = np.zeros((S, N), np.float32)
+            ws = np.zeros((S, N), np.float32)
             # keep the flipped values and then reorder the surface indices
             for s in range(S):
                 idx = tor.soidx[s]
                 flip = int(tor.flipped[idx])
-                tuw[:, s, :] = tuws[idx][flip]  # shape (3, N)
-            t, u = geo.multiline._get_tu(tor.shift, tuw)
-            msparam['u_max'] = np.abs(u).max()
+                us[s] = tuws[idx, flip, 1] + tor.shift[s]
+                ws[s] = tuws[idx, flip, 2]
+            W = ws.sum(axis=0)  # shape N
+            msparam['u_max'] = np.abs(us * ws / W).max()
 
             # building bounding box
             lons = np.concatenate([secparam['west'], secparam['east']])
