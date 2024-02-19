@@ -1,3 +1,14 @@
+  [Michele Simionato]
+  * Extended the command `oq sample` to multi fault sources
+  * Fixed the reading of ruptures with a multisurface with meshes
+    of different lengths
+  * Fixed `oq compare`: the tolerance parameters were ignored
+  * Fixed a numerical precision error affecting the hazard curves at
+    very high intensities
+  * Optimized multi fault sources by moving surface calculations in the
+    preclassical phase
+  * Fixed disaggregation in case of mutex sources
+
   [Paolo Tormene]
   * Added the possibility to display/hide announcements on top of all WebUI
     pages, setting them up via the Django admin interface

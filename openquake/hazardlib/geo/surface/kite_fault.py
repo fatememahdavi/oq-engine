@@ -117,11 +117,14 @@ class KiteSurface(BaseSurface):
         return self._get_external_boundary()
 
     @cached_property
-    def tor_line(self):
+    # this is cached since it can be called multiple times for the same
+    # surface (in multi fault sources)
+    def tor(self):
         """
         Provides longitude and latitude coordinates of the vertical surface
         projection of the top of rupture. This is used in the GC2 method to
-        compute the Rx and Ry0 distances.
+        compute the Rx and Ry0 distances. NB: keep_corners is used to reduce
+        the line, with a tolerance of 1 km.
 
         One important note here. The kite fault surface uses a rectangular
         mesh to describe the geometry of the rupture; some nodes can be NaN.
@@ -137,7 +140,7 @@ class KiteSurface(BaseSurface):
         iro = iro[iro <= 1]
         # top_left, top_right coordinates
         lo, la = self.mesh.lons[iro, ico], self.mesh.lats[iro, ico]
-        return Line.from_vectors(lo, la)
+        return Line.from_vectors(lo, la).keep_corners(delta=1.)
 
     def is_vertical(self):
         """ True if all the profiles, and hence the surface, are vertical """
@@ -548,6 +551,13 @@ class KiteSurface(BaseSurface):
         # width (size along column of points) in km and the area in km2.
         return None, None, None, area
 
+    def __str__(self):
+        if hasattr(self, 'idx'):  # multisurface index
+            idx = ' idx=%d' % self.idx
+        else:
+            idx = ''
+        return '<%s%s>' % (self.__class__.__name__, idx)
+
 
 def geom_to_kite(geom):
     """
@@ -830,7 +840,6 @@ def _fix_right_hand(msh):
     tmp = msh[0, :, 0]
     idx = np.isfinite(tmp)
     top = Line([Point(c[0], c[1]) for c in msh[0, idx, :]])
-    avg_azi = top.average_azimuth()
 
     # Compute the strike of the surface
     coo = msh.reshape(-1, 3)
@@ -840,7 +849,7 @@ def _fix_right_hand(msh):
     strike = grdd.get_strike()
 
     # Check if we need to flip the grid
-    if not np.abs(_angles_diff(strike, avg_azi)) < 60:
+    if not np.abs(_angles_diff(strike, top.azimuth)) < 60:
 
         # Flip the grid to make it compliant with the right hand rule
         nmsh = np.flip(msh, axis=1)
@@ -849,11 +858,10 @@ def _fix_right_hand(msh):
         tmp = nmsh[0, :, 0]
         idx = np.isfinite(tmp)
         top = Line([Point(c[0], c[1]) for c in nmsh[0, idx, :]])
-        avg_azi_new = top.average_azimuth()
 
         # Check again the average azimuth for the top edge of the surface
         msg = "The mesh still does not comply with the right hand rule"
-        assert np.abs(_angles_diff(strike, avg_azi_new)) < 60, msg
+        assert np.abs(_angles_diff(strike, top.azimuth)) < 60, msg
         return nmsh
 
     return msh

@@ -20,16 +20,15 @@ import os.path
 import pickle
 import operator
 import logging
-import collections
 import gzip
 import zlib
 import numpy
 
 from openquake.baselib import parallel, general, hdf5, python3compat
 from openquake.hazardlib import nrml, sourceconverter, InvalidFile, calc
+from openquake.hazardlib.source.multi_fault import save
 from openquake.hazardlib.valid import basename, fragmentno
 from openquake.hazardlib.lt import apply_uncertainties
-from openquake.hazardlib.geo.surface.kite_fault import kite_to_geom
 
 U16 = numpy.uint16
 TWO16 = 2 ** 16  # 65,536
@@ -239,20 +238,26 @@ def get_csm(oq, full_lt, dstore=None):
         logging.info('Setting src._wkt')
 
     csm = _get_csm(full_lt, groups, is_event_based, set_wkt)
+    out = []
+    probs = []
     for sg in csm.src_groups:
         if sg.src_interdep == 'mutex' and 'src_mutex' not in dstore:
-            dtlist = [('src_id', hdf5.vstr), ('grp_id', int),
-                      ('num_ruptures', int), ('mutex_weight', float)]
-            out = []
             segments = []
             for src in sg:
                 segments.append(int(src.source_id.split(':')[1]))
-                t = (src.source_id, src.count_ruptures(),
-                     src.grp_id, src.mutex_weight)
+                t = (src.source_id, src.grp_id,
+                     src.count_ruptures(),src.mutex_weight)
                 out.append(t)
+            probs.append((src.grp_id, sg.grp_probability))
             assert len(segments) == len(set(segments)), segments
-            dstore.create_dset('src_mutex', numpy.array(out, dtlist),
-                               fillvalue=None)
+    if out:
+        dtlist = [('src_id', hdf5.vstr), ('grp_id', int),
+                  ('num_ruptures', int), ('mutex_weight', float)]
+        dstore.create_dset('src_mutex', numpy.array(out, dtlist),
+                           fillvalue=None)
+        lst = [('grp_id', int), ('probability', float)]
+        dstore.create_dset('grp_probability', numpy.array(probs, lst),
+                           fillvalue=None)
     return csm
 
 
@@ -328,43 +333,18 @@ def fix_geometry_sections(smdict, dstore):
         sec_ids.extend(gmod.sections)
         sections.update(gmod.sections)
     check_unique(sec_ids, 'section ID in files ' + ' '.join(gfiles))
-    s2i = {idx: i for i, idx in enumerate(sections)}
-    for idx, sec in enumerate(sections.values()):
-        sec.idx = idx
+
     if sections:
+        # save in the temporary file
         assert dstore, ('You forgot to pass the dstore to '
                         'get_composite_source_model')
-        with hdf5.File(dstore.tempname, 'w') as h5:
-            '''
-            mesh = dstore['sitecol'].mesh
-            # this is absurdly fast
-            logging.info('Computing distances sections->points')
-            dists = numpy.array([sec.get_min_distance(mesh)
-                                 for sec in sections.values()])
-            h5.create_dataset('dists', data=dists)  # shape (Ns, N)
-            logging.info(f'Stored {general.humansize(dists.nbytes)}')
-            '''
-            h5.save_vlen('multi_fault_sections',
-                         [kite_to_geom(sec) for sec in sections.values()])
-
-    # fix the MultiFaultSources
-    section_idxs = []
-    for smod in smodels:
-        for sg in smod.src_groups:
-            for src in sg:
-                if hasattr(src, 'set_sections'):
-                    if not sections:
-                        raise RuntimeError('Missing geometryModel files!')
-                    if dstore:
-                        src.hdf5path = dstore.tempname
-                    src.rupture_idxs = [U16([s2i[idx] for idx in idxs])
-                                        for idxs in src.rupture_idxs]
-                    for idxs in src.rupture_idxs:
-                        section_idxs.extend(idxs)
-    cnt = collections.Counter(section_idxs)
-    if cnt:
-        mean_counts = numpy.mean(list(cnt.values()))
-        logging.info('Section multiplicity = %.1f', mean_counts)
+        mfsources = []
+        for smod in smodels:
+            for sg in smod.src_groups:
+                for src in sg:
+                    if src.code == b'F':
+                        mfsources.append(src)
+        save(mfsources, sections, dstore.tempname)
 
 
 def _groups_ids(smlt_dir, smdict, fnames):
@@ -467,11 +447,12 @@ def _get_csm(full_lt, groups, event_based, set_wkt):
                        'of {:_d} points!')
                 for src in sources:
                     # check on MultiFaultSources and NonParametricSources
-                    mesh_size = getattr(src, 'mesh_size', 0)
-                    if mesh_size > 1E6:
-                        logging.warning(msg.format(
-                            src.source_id, src.count_ruptures(), mesh_size))
-                    src._wkt = src.wkt()
+                    #mesh_size = getattr(src, 'mesh_size', 0)
+                    #if mesh_size > 1E6:
+                    #    logging.warning(msg.format(
+                    #        src.source_id, src.count_ruptures(), mesh_size))
+                    #src._wkt = src.wkt()
+                    pass
             src_groups.append(sourceconverter.SourceGroup(trt, sources))
     if set_wkt:
         for ag in atomic:
