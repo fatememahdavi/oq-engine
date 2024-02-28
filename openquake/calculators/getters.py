@@ -155,6 +155,8 @@ class PmapGetter(object):
         else:
             self.trt_rlzs = full_lt.get_trt_rlzs(dstore['trt_smrs'][:])
         self.slices = slices
+        self.start = slices[0][0]
+        self.stop = slices[-1][1]
         self._pmap = {}
 
     @property
@@ -191,9 +193,10 @@ class PmapGetter(object):
             return self._pmap
         G = len(self.trt_rlzs)
         with hdf5.File(self.filename) as dstore:
+            rates_df = dstore.read_df('_rates', slc=slice(self.start, self.stop))
             for start, stop in self.slices:
-                rates_df = dstore.read_df('_rates', slc=slice(start, stop))
-                for sid, df in rates_df.groupby('sid'):
+                slc = slice(start-self.start, stop-self.start)
+                for sid, df in rates_df[slc].groupby('sid'):
                     try:
                         array = self._pmap[sid].array
                     except KeyError:
