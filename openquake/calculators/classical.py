@@ -455,7 +455,7 @@ class ClassicalCalculator(base.HazardCalculator):
         else:
             maxw = self.max_weight
         self.init_poes()
-        req_gb, self.trt_rlzs, self.gids = get_pmaps_gb(self.datastore)
+        self.req_gb, self.trt_rlzs, self.gids = get_pmaps_gb(self.datastore)
         weig = numpy.array([w['weight'] for w in self.full_lt.g_weights(
             self.trt_rlzs)])
         self.datastore['_rates/weig'] = weig
@@ -471,7 +471,8 @@ class ClassicalCalculator(base.HazardCalculator):
 
         t0 = time.time()
         max_gb = float(config.memory.pmap_max_gb)
-        if oq.disagg_by_src or self.N < oq.max_sites_disagg or req_gb < max_gb:
+        if (oq.disagg_by_src or self.N < oq.max_sites_disagg
+            or self.req_gb < max_gb):
             self.check_memory(len(self.sitecol), oq.imtls.size, maxw)
             self.execute_reg(maxw)
         else:
@@ -565,6 +566,7 @@ class ClassicalCalculator(base.HazardCalculator):
             ds = self.datastore.parent
         else:
             ds = self.datastore
+        ntiles = self.req_gb / float(config.memory.pmap_max_gb)
         for cm in self.cmakers:
             sg = self.csm.src_groups[cm.grp_id]
             cm.rup_indep = getattr(sg, 'rup_interdep', None) != 'mutex'
@@ -572,11 +574,13 @@ class ClassicalCalculator(base.HazardCalculator):
             if sg.atomic or sg.weight <= maxw:
                 allargs.append((None, self.sitecol, cm, ds))
             else:
-                tiles = self.sitecol.split(numpy.ceil(sg.weight / maxw))
+                blks = block_splitter(sg, maxw, get_weight, sort=True)
+                tiles = self.sitecol.split(ntiles)
                 logging.info('Group #%d, %d tiles', cm.grp_id, len(tiles))
-                for tile in tiles:
-                    allargs.append((None, tile, cm, ds))
-                    self.ntiles.append(len(tiles))
+                for blk in blks:
+                    for tile in tiles:
+                        allargs.append((blk, tile, cm, ds))
+                        self.ntiles.append(len(tiles))
         logging.warning('Generated at most %d tiles', max(self.ntiles))
         self.datastore.swmr_on()  # must come before the Starmap
         for dic in parallel.Starmap(classical, allargs, h5=self.datastore.hdf5):
