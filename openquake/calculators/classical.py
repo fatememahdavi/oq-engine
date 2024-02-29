@@ -114,10 +114,6 @@ def classical(sources, sitecol, cmaker, dstore, monitor):
     with dstore:
         if sitecol is None:  # regular calculator
             sitecol = dstore['sitecol']  # super-fast
-        else:  # tiling calculator, read the sources from the datastore
-            with monitor('reading sources'):  # fast, but uses a lot of RAM
-                arr = dstore.getitem('_csm')[cmaker.grp_id]
-                sources = pickle.loads(gzip.decompress(arr.tobytes()))
 
     if cmaker.disagg_by_src and not getattr(sources, 'atomic', False):
         # in case_27 (Japan) we do NOT enter here;
