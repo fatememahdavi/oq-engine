@@ -570,7 +570,7 @@ class ClassicalCalculator(base.HazardCalculator):
             if sg.atomic or sg.weight <= maxw:
                 allargs.append((None, self.sitecol, cm, ds))
             else:
-                blks = block_splitter(sg, maxw, get_weight, sort=True)
+                blks = block_splitter(sg, maxw * ntiles, get_weight, sort=True)
                 tiles = self.sitecol.split(ntiles)
                 logging.info('Group #%d, %d tiles', cm.grp_id, len(tiles))
                 for blk in blks:
