@@ -572,8 +572,14 @@ class ClassicalCalculator(base.HazardCalculator):
             if sg.atomic or sg.weight <= maxw:
                 allargs.append((None, self.sitecol, cm, ds))
             else:
-                tiles = self.sitecol.split_in_tiles(
-                    numpy.ceil(sg.weight / maxw))
+                hint = numpy.ceil(sg.weight / maxw)
+                if hint < 10:
+                    # split in a few homogeneous tiles
+                    tiles = self.sitecol.split(hint)
+                else:
+                    # split in tiles with contiguous sids to produce less
+                    # slices and to get a faster postclassical but slower tasks
+                    tiles = self.sitecol.split_in_tiles(hint)
                 logging.info('Group #%d, %d tiles', cm.grp_id, len(tiles))
                 for tile in tiles:
                     allargs.append((None, tile, cm, ds))
